@@ -1,6 +1,22 @@
 import JSZip from 'jszip';
 import FileSaver from 'file-saver';
 
+// Helper: decode base64 to Uint8Array
+function base64ToUint8Array(base64) {
+    try {
+        const binaryString = atob(base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes;
+    } catch (e) {
+        console.error('[Downloader] base64 decode error:', e);
+        return null;
+    }
+}
+
 class Downloader {
 
     static run(files, fileName) {
@@ -18,9 +34,8 @@ class Downloader {
         for(let i = 0; i < files.length; i++) {
             let file = files[i];
             
-            // Ensure content is a valid string
+            // Get content
             let content = file.content;
-            
             if (content === null || content === undefined) {
                 console.warn('[Downloader] File has null/undefined content:', file.name);
                 content = '';
@@ -30,7 +45,6 @@ class Downloader {
             
             // Handle data URLs - extract base64 part if present
             if (content.indexOf('data:') === 0 && content.indexOf(',') > 0) {
-                console.log('[Downloader] Detected data URL, extracting base64 for:', file.name);
                 content = content.split(',')[1];
             }
             
@@ -39,18 +53,28 @@ class Downloader {
             if (!name) {
                 name = 'file_' + i;
             }
+            // Force name to be string
+            name = String(name);
             
-            console.log('[Downloader] Adding file:', name, 'type:', typeof content, 'length:', content.length);
-            
-            // Use base64 encoding for binary files, utf8 for text files
+            // Determine if binary file
             let isBinary = file.base64 || name.match(/\.(png|jpg|jpeg|gif|webp|svg|ico|bmp)$/i);
+            
+            console.log('[Downloader] Adding file:', name, 'binary:', isBinary, 'length:', content.length);
             
             try {
                 if (isBinary) {
-                    zip.file(name, content, {base64: true});
+                    // Decode base64 to Uint8Array and add as binary
+                    let binaryData = base64ToUint8Array(content);
+                    if (binaryData) {
+                        zip.file(name, binaryData, {binary: true});
+                        console.log('[Downloader] Added', name, 'as binary, size:', binaryData.length);
+                    } else {
+                        console.warn('[Downloader] Failed to decode binary:', name);
+                    }
                 } else {
-                    // For text files, use raw string
-                    zip.file(name, content);
+                    // Add as text (UTF-8) - explicitly ensure it's a string
+                    let textContent = String(content);
+                    zip.file(name, textContent);
                 }
             } catch (err) {
                 console.error('[Downloader] Error adding file:', name, err);
@@ -62,7 +86,18 @@ class Downloader {
 
         console.log('[Downloader] Generating zip with', Object.keys(zip.files).length, 'files');
         
-        return zip.generateAsync({type:"blob", compression:"DEFLATE", compressionOptions:{level:6}}, (metadata) => {
+        // Debug: verify all file names are valid strings
+        Object.keys(zip.files).forEach((filePath, idx) => {
+            const file = zip.files[filePath];
+            console.log(`[Downloader] File ${idx}: name="${file.name}" typeof name=${typeof file.name}`);
+            try {
+                file.name.charCodeAt(0);
+            } catch (e) {
+                console.error(`[Downloader] CRITICAL: charCodeAt failed for file "${file.name}"`, e);
+            }
+        });
+        
+        return zip.generateAsync({type:"blob"}, (metadata) => {
             // Only log every 25%
             if (Math.floor(metadata.percent) % 25 === 0) {
                 console.log('[Downloader] Compression progress:', metadata.percent.toFixed(0) + '%');
@@ -72,65 +107,9 @@ class Downloader {
             FileSaver.saveAs(content, fileName);
         }).catch(err => {
             console.error('[Downloader] Error generating zip:', err);
-            // Try fallback approach
-            console.log('[Downloader] Trying fallback approach...');
-            return this.runFallback(files, fileName);
+            throw err;
         });
     }
-    
-    static runFallback(files, fileName) {
-        // Fallback: try each file individually
-        console.log('[Downloader] Fallback approach - adding files with explicit encoding');
-        
-        let zip = new JSZip();
-        JSZip.defaults.date = new Date();
-        
-        return new Promise((resolve, reject) => {
-            let processNext = (index) => {
-                if (index >= files.length) {
-                    console.log('[Downloader] Fallback: generating zip with', Object.keys(zip.files).length, 'files');
-                    zip.generateAsync({type:"blob"})
-                        .then(content => {
-                            FileSaver.saveAs(content, fileName);
-                            resolve();
-                        })
-                        .catch(reject);
-                    return;
-                }
-                
-                let file = files[index];
-                let content = file.content || '';
-                content = String(content);
-                
-                if (content.indexOf('data:') === 0 && content.indexOf(',') > 0) {
-                    content = content.split(',')[1];
-                }
-                
-                let name = file.name || 'file_' + index;
-                
-                try {
-                    // Check if it's binary
-                    let isBinary = file.base64 || name.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp)$/i);
-                    
-                    if (isBinary) {
-                        zip.file(name, content, {base64: true});
-                    } else {
-                        // Try to encode as UTF8 explicitly
-                        let uint8 = new TextEncoder().encode(content);
-                        zip.file(name, uint8);
-                    }
-                } catch (err) {
-                    console.error('[Downloader] Fallback error for file:', name, err);
-                }
-                
-                // Process next file
-                setTimeout(() => processNext(index + 1), 10);
-            };
-            
-            processNext(0);
-        });
-    }
-
 }
 
 export default Downloader;
