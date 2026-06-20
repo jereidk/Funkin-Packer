@@ -172,8 +172,7 @@ class SheetSplitter extends React.Component {
                 item.name += '.' + ext;
             }
 
-            let base64 = this.buffer.toDataURL('image/png');
-            //base64 = base64.split(',').pop();
+            let base64 = this.buffer.toDataURL('image/png').split(',').pop();
 
             files.push({
                 name: item.name,
@@ -187,7 +186,8 @@ class SheetSplitter extends React.Component {
 
         for(let file of files) {
             var image = new Image();
-            image.src = file.base64;
+            // Reconstruct data URL for image src (needs full data: URL for loading)
+            image.src = 'data:image/png;base64,' + file.base64;
             image._base64 = file.base64;
 
             images[file.name] = image;
