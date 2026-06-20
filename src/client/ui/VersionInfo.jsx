@@ -1,12 +1,13 @@
 import React from 'react';
 import appInfo from '../../../package.json';
 
-// Version info - automatically updated by CI/build process
+// Version info - updated manually with each release
 // This displays the latest commits in a tooltip
 const VERSION_INFO = {
-    commit: process.env.GIT_COMMIT || 'local',
-    branch: process.env.GIT_BRANCH || 'main',
-    date: process.env.BUILD_DATE || new Date().toISOString().split('T')[0],
+    // Static values - update these when deploying
+    commit: 'c21889d',
+    branch: 'main',
+    date: '2026-06-20',
     commits: [
         { hash: 'c21889d', message: 'Enhanced debug logging for JSZip charCodeAt error', date: '2026-06-20' },
         { hash: '814f039', message: 'Fix syntax error in debug logs', date: '2026-06-20' },
