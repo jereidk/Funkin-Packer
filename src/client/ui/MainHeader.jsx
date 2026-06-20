@@ -5,6 +5,7 @@ import I18 from '../utils/I18';
 import appInfo from '../../../package.json';
 import languages from '../resources/static/localization/languages.json';
 import AtlasStatsHeader from './AtlasStatsHeader.jsx';
+import VersionInfo from './VersionInfo.jsx';
 
 class MainHeader extends React.Component {
     constructor(props) {
@@ -89,6 +90,9 @@ class MainHeader extends React.Component {
                 <div className="main-header-controls">
                     <div className="btn back-700 border-color-gray color-white" onClick={this.showSplitter}>{I18.f("SPLITTER")}</div>
                 </div>
+                
+                {/* Version info badge - click for commit history */}
+                <VersionInfo />
             </div>
         );
     }
