@@ -231,12 +231,12 @@ function finishExporter(exporter, renderOptions, resolve, reject) {
 
 /**
  * BetterTA Exporter - Generates BetterTA Atlas.json
- * 
-console.log('[BetterTAExporter] Module loaded');
+ *
  * Note: Animation.json (timelines, symbols) is now preserved separately
  * via AnimationLinker and re-exported unchanged.
  */
 async function startBetterTAExporter(exporter, data, options) {
+    console.log('[BetterTAExporter] startBetterTAExporter called');
     let {rects, config} = prepareData(data, options);
     let renderOptions = {
         rects: rects,
@@ -270,7 +270,7 @@ async function startBetterTAExporter(exporter, data, options) {
 
     // Generate Atlas.json
     let atlasContent = mustache.render(atlasTemplate, renderOptions);
-    console.log('[BetterTAExporter] Generated atlas content type:, typeof atlasContent, 'length:, atlasContent ? atlasContent.length : 0);
+    console.log('[BetterTAExporter] Generated atlas content type:', typeof atlasContent, 'length:', atlasContent ? atlasContent.length : 0);
 
     // Animation.json is now preserved separately via AnimationLinker
     // and re-exported unchanged in APP.js
