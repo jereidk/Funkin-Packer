@@ -342,6 +342,12 @@ class APP {
             ix++;
         }
 
+        // Debug: log files being sent to Downloader
+        console.log('[APP] Files to download:', files.length);
+        for (let f of files) {
+            console.log('[APP]   -', f.name, 'type:', typeof f.content, 'length:', f.content ? f.content.length : 'null');
+        }
+
         try {
             await Downloader.run(files, this.packOptions.fileName, this.packOptions.savePath);
         } catch (e) {
