@@ -187,20 +187,16 @@ class AnimationLinker {
         let orphanedSymbols = [];
 
         for (let [name, refs] of this.spriteReferences) {
-            if (!spriteNames.has(name)) {
-                // Check if this is a sprite or symbol reference
-                let isSpriteRef = refs.some(r => r.type === 'ASI' || r.type === 'SN');
-                let isSymbolRef = refs.some(r => r.type === 'SI');
-                
-                if (isSpriteRef && !isSymbolRef) {
-                    orphanedSprites.push({name, locations: refs});
-                } else if (isSymbolRef) {
-                    orphanedSymbols.push({name, locations: refs});
-                } else {
-                    // Unknown type, include in both
-                    orphanedSprites.push({name, locations: refs});
-                    orphanedSymbols.push({name, locations: refs});
-                }
+            let isAsiRef = refs.some(r => r.type === 'ASI');
+            let isSiRef = refs.some(r => r.type === 'SI');
+
+            // ASI (bitmap sprites) validated against atlas sprite list
+            if (isAsiRef && !spriteNames.has(name)) {
+                orphanedSprites.push({name, locations: refs});
+            }
+            // SI (symbol instances) validated against symbol dictionary
+            if (isSiRef && !this.symbolDefinitions.has(name)) {
+                orphanedSymbols.push({name, locations: refs});
             }
         }
 

@@ -287,22 +287,10 @@ class APP {
                         let validation = animLinker.validateExistence(spriteNames);
                         
                         if (validation.total > 0) {
-                            // Build warning message
                             let warnings = [];
-                            if (validation.sprites.length > 0) {
-                                warnings.push(validation.sprites.length + ' sprites');
-                            }
-                            if (validation.symbols.length > 0) {
-                                warnings.push(validation.symbols.length + ' symbols');
-                            }
-                            
-                            let warnMsg = 'Warning: Animation references may be broken:\n' +
-                                '- ' + warnings.join(', ') + ' not found in atlas\n' +
-                                '- Animation may not play correctly\n' +
-                                '- Consider keeping original sprite names';
-                            
-                            Observer.emit(GLOBAL_EVENT.SHOW_MESSAGE, warnMsg);
-                            console.warn('BetterTA: Orphaned references detected:', validation);
+                            if (validation.sprites.length > 0) warnings.push(validation.sprites.length + ' sprites');
+                            if (validation.symbols.length > 0) warnings.push(validation.symbols.length + ' symbols');
+                            console.warn('BetterTA: Animation references may be broken — ' + warnings.join(', ') + ' not found in atlas. Consider keeping original sprite names.');
                         }
                         
                         // Log reference stats

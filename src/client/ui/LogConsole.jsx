@@ -24,43 +24,48 @@ class LogConsole extends React.Component {
         this.copyLogs = this.copyLogs.bind(this);
         this.handleLog = this.handleLog.bind(this);
         
-        // Override console methods
+        // Save originals before overriding
         this.originalLog = console.log;
         this.originalWarn = console.warn;
         this.originalError = console.error;
-        
+        this.originalInfo = console.info;
+        this.originalDebug = console.debug;
+
         this.attachConsoleListeners();
     }
 
+    componentDidUpdate() {
+        // Auto-scroll to latest log entry
+        if (this.state.isExpanded && this.logList) {
+            this.logList.scrollTop = this.logList.scrollHeight;
+        }
+    }
+
     componentWillUnmount() {
-        // Restore original console methods
         console.log = this.originalLog;
         console.warn = this.originalWarn;
         console.error = this.originalError;
+        console.info = this.originalInfo;
+        console.debug = this.originalDebug;
     }
 
     attachConsoleListeners() {
-        console.log = (...args) => {
-            this.originalLog.apply(console, args);
-            this.handleLog('log', args);
+        const capture = (type, original) => (...args) => {
+            original.apply(console, args);
+            this.handleLog(type, args);
         };
-        
-        console.warn = (...args) => {
-            this.originalWarn.apply(console, args);
-            this.handleLog('warn', args);
-        };
-        
-        console.error = (...args) => {
-            this.originalError.apply(console, args);
-            this.handleLog('error', args);
-        };
-        
-        // Intercept unhandled errors
+
+        console.log   = capture('log',   this.originalLog);
+        console.warn  = capture('warn',  this.originalWarn);
+        console.error = capture('error', this.originalError);
+        console.info  = capture('log',   this.originalInfo);
+        console.debug = capture('log',   this.originalDebug);
+
         window.onerror = (message, source, lineno, colno, error) => {
-            this.handleLog('error', [`Uncaught error: ${message} at ${source}:${lineno}:${colno}`, error?.stack]);
+            this.handleLog('error', [`Uncaught: ${message} at ${source}:${lineno}:${colno}`, error?.stack]);
             return false;
         };
-        
+
         window.onunhandledrejection = (event) => {
             this.handleLog('error', [`Unhandled promise rejection: ${event.reason}`]);
         };
