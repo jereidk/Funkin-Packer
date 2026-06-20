@@ -60,7 +60,10 @@ class BetterTA extends Splitter {
                     let sprite = item.SPRITE || item;
                     
                     // Skip invalid entries
-                    if (!sprite.name && !sprite.n) continue;
+                    if (!sprite.name && !sprite.n) {
+                        console.warn('BetterTA: skipping entry without name:', item);
+                        continue;
+                    }
                     
                     frames.push({
                         name: String(sprite.name || sprite.n || ''),

@@ -131,8 +131,8 @@ class AnimationLinker {
     getReferencedSprites() {
         let sprites = [];
         for (let [name, refs] of this.spriteReferences) {
-            // Only include ASI references (actual bitmap sprites)
-            if (refs.some(r => r.type === 'ASI' || r.type === 'SN')) {
+            // Only include ASI references (actual bitmap sprites, not symbol names)
+            if (refs.some(r => r.type === 'ASI')) {
                 sprites.push(name);
             }
         }
