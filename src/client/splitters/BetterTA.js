@@ -19,6 +19,7 @@ class BetterTA extends Splitter {
      */
     static check(data, cb) {
         try {
+            if (typeof data === 'string' && data.charCodeAt(0) === 0xFEFF) data = data.slice(1);
             let json = typeof data === 'string' ? JSON.parse(data) : data;
             
             // BetterTA format: {ATLAS: {SPRITES: [...]}}
@@ -49,8 +50,9 @@ class BetterTA extends Splitter {
      */
     static split(data, options, cb) {
         let frames = [];
-        
+
         try {
+            if (typeof data === 'string' && data.charCodeAt(0) === 0xFEFF) data = data.slice(1);
             let json = typeof data === 'string' ? JSON.parse(data) : data;
             
             // BetterTA format: {ATLAS: {SPRITES: [{SPRITE: {...}}, ...]}}
@@ -120,7 +122,7 @@ class BetterTA extends Splitter {
             }
         }
         catch(e) {
-            console.error('BetterTA splitter error:', e);
+            console.error('BetterTA splitter error:', e.message || String(e), e.stack || '');
         }
         
         cb(frames);
