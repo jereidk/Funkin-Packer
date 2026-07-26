@@ -74,10 +74,7 @@ class LogConsole extends React.Component {
     handleLog(type, args) {
         const timestamp = new Date().toLocaleTimeString();
         const message = args.map(arg => {
-            if (arg instanceof Error) {
-                return arg.stack || `${arg.name}: ${arg.message}`;
-            }
-            if (typeof arg === 'object' && arg !== null) {
+            if (typeof arg === 'object') {
                 try {
                     return JSON.stringify(arg, null, 2);
                 } catch {

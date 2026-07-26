@@ -177,7 +177,7 @@ class SheetSplitter extends React.Component {
             files.push({
                 name: item.name,
                 content: base64,
-                base64: true
+                base64: base64
             });
         }
 
@@ -282,7 +282,7 @@ class SheetSplitter extends React.Component {
             files.push({
                 name: item.name,
                 content: base64,
-                base64: true
+                base64: base64
             });
         }
 
@@ -380,8 +380,9 @@ class SheetSplitter extends React.Component {
             reader.onload = e => {
 
                 let content = e.target.result;
-                // Strip UTF-8 BOM if present
-                if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+                content = content.split(',');
+                content.shift();
+                content = atob(content);
 
                 this.data = content;
 
@@ -410,7 +411,7 @@ class SheetSplitter extends React.Component {
                 });
             };
 
-            reader.readAsText(item, 'utf-8');
+            reader.readAsDataURL(item);
         }
     }
 
@@ -421,8 +422,9 @@ class SheetSplitter extends React.Component {
             let reader = new FileReader();
             reader.onload = e => {
                 let content = e.target.result;
-                // Strip UTF-8 BOM if present
-                if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+                content = content.split(',');
+                content.shift();
+                content = atob(content);
 
                 // Load Animation.json into AnimationLinker
                 let animLinker = getAnimationLinker();
@@ -445,7 +447,7 @@ class SheetSplitter extends React.Component {
                 }
             };
 
-            reader.readAsText(item, 'utf-8');
+            reader.readAsDataURL(item);
         }
     }
 
