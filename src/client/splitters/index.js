@@ -28,12 +28,8 @@ function getSplitterByType(type) {
 }
 
 function getSplitterByData(data, cb) {
-    // Skip XML-based Sparrow check when data is clearly JSON
-    const isJson = typeof data === 'string' && (data.trimStart()[0] === '{' || data.trimStart()[0] === '[');
-
     for(let item of list) {
         if(item.type !== Grid.type) {
-            if(isJson && item.type === Sparrow.type) continue;
             item.check(data, (checked) => {
                 if(checked) {
                     if(cb) {
