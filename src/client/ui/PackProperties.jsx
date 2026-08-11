@@ -33,7 +33,7 @@ class PackProperties extends React.Component {
         this.onPropChanged = this.onPropChanged.bind(this);
         this.onExporterChanged = this.onExporterChanged.bind(this);
         this.onExporterPropChanged = this.onExporterPropChanged.bind(this);
-        this.forceUpdate = this.forceUpdate.bind(this);
+        this.onEnterKeyCommit = this.onEnterKeyCommit.bind(this);
         this.selectSavePath = this.selectSavePath.bind(this);
 
         this.packOptions = this.loadOptions();
@@ -136,7 +136,7 @@ class PackProperties extends React.Component {
 
         data.textureName = ReactDOM.findDOMNode(this.refs.textureName).value;
         data.textureFormat = ReactDOM.findDOMNode(this.refs.textureFormat).value;
-        
+
         // PNG compression options
         if (this.refs.compressPng) {
             data.compressPng = ReactDOM.findDOMNode(this.refs.compressPng).checked;
@@ -275,7 +275,17 @@ class PackProperties extends React.Component {
         Observer.emit(GLOBAL_EVENT.PACK_EXPORTER_CHANGED, this.getPackOptions());
     }
 
-    forceUpdate(e) {
+    // Named this.forceUpdate() previously, which shadowed React.Component's
+    // real inherited forceUpdate() method with this Enter-key handler -
+    // every genuine this.forceUpdate() call elsewhere in this class (e.g.
+    // onExporterPropChanged(), after switching texture format) silently did
+    // nothing instead of re-rendering, since it always ran with no event
+    // argument. Whether a change appeared to "work" depended entirely on
+    // whether some unrelated re-render happened to also be in flight around
+    // the same time - e.g. switching to ASTC showed its config rows only by
+    // coincidence, and switching back to PNG left the ASTC-only view stuck
+    // on screen with the PNG compression row never reappearing.
+    onEnterKeyCommit(e) {
         if(e) {
             let key = e.keyCode || e.which;
             if (key === 13) this.onPropChanged();
@@ -500,22 +510,22 @@ class PackProperties extends React.Component {
 
                             <tr title={I18.f("WIDTH_TITLE")}>
                                 <td>{I18.f("WIDTH")}</td>
-                                <td><input ref="width" type="number" min="0" className="border-color-gray" defaultValue={this.packOptions.width} onBlur={this.onPropChanged} onKeyDown={this.forceUpdate}/></td>
+                                <td><input ref="width" type="number" min="0" className="border-color-gray" defaultValue={this.packOptions.width} onBlur={this.onPropChanged} onKeyDown={this.onEnterKeyCommit}/></td>
                                 <td></td>
                             </tr>
                             <tr title={I18.f("HEIGHT_TITLE")}>
                                 <td>{I18.f("HEIGHT")}</td>
-                                <td><input ref="height" type="number" min="0" className="border-color-gray" defaultValue={this.packOptions.height} onBlur={this.onPropChanged} onKeyDown={this.forceUpdate}/></td>
+                                <td><input ref="height" type="number" min="0" className="border-color-gray" defaultValue={this.packOptions.height} onBlur={this.onPropChanged} onKeyDown={this.onEnterKeyCommit}/></td>
                                 <td></td>
                             </tr>
                             <tr title={I18.f("PADDING_TITLE")}>
                                 <td>{I18.f("PADDING")}</td>
-                                <td><input ref="spritePadding" type="number" className="border-color-gray" defaultValue={this.packOptions.spritePadding} min="0" onInput={this.onPropChanged} onKeyDown={this.forceUpdate}/></td>
+                                <td><input ref="spritePadding" type="number" className="border-color-gray" defaultValue={this.packOptions.spritePadding} min="0" onInput={this.onPropChanged} onKeyDown={this.onEnterKeyCommit}/></td>
                                 <td></td>
                             </tr>
                             <tr title={I18.f("EXTRUDE_TITLE")}>
                                 <td>{I18.f("EXTRUDE")}</td>
-                                <td><input ref="borderPadding" type="number" className="border-color-gray" defaultValue={this.packOptions.borderPadding} min="0" onInput={this.onPropChanged} onKeyDown={this.forceUpdate}/></td>
+                                <td><input ref="borderPadding" type="number" className="border-color-gray" defaultValue={this.packOptions.borderPadding} min="0" onInput={this.onPropChanged} onKeyDown={this.onEnterKeyCommit}/></td>
                                 <td></td>
                             </tr>
                             <tr title={I18.f("ALLOW_ROTATION_TITLE")}>
@@ -589,7 +599,7 @@ class PackProperties extends React.Component {
                             </tr>
                             <tr title={I18.f("ALPHA_THRESHOLD_TITLE")}>
                                 <td>{I18.f("ALPHA_THRESHOLD")}</td>
-                                <td><input ref="alphaThreshold" type="number" className="border-color-gray" defaultValue={this.packOptions.alphaThreshold} min="0" max="255" onBlur={this.onPropChanged} onKeyDown={this.forceUpdate}/></td>
+                                <td><input ref="alphaThreshold" type="number" className="border-color-gray" defaultValue={this.packOptions.alphaThreshold} min="0" max="255" onBlur={this.onPropChanged} onKeyDown={this.onEnterKeyCommit}/></td>
                                 <td></td>
                             </tr>
                         </tbody>
