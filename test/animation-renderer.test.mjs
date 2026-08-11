@@ -67,6 +67,30 @@ runs++;
     }
 }
 
+console.log('=== layers draw back-to-front: array index 0 ends up drawn LAST (on top) ===');
+runs++;
+{
+    // Verified against flixel-animate's actual renderer (FlxAnimate.hx,
+    // parseElement(): `layers[layers.length - 1 - i]`) - the layer at JSON
+    // array index 0 (top of Animate's own Timeline panel) must be drawn
+    // last, ending up visually in front of every layer below it in the
+    // array. Two ASI leaves, same tick, different layers - draw order in
+    // the output array is what determines final on-screen stacking (later
+    // entries paint over earlier ones).
+    const animData = {
+        AN: { TL: { L: [
+            { FR: [{ I: 0, DU: 1, E: [{ ASI: { N: 'topLayerSprite', MX: AR.IDENTITY_MATRIX } }] }] },
+            { FR: [{ I: 0, DU: 1, E: [{ ASI: { N: 'bottomLayerSprite', MX: AR.IDENTITY_MATRIX } }] }] }
+        ] } },
+        SD: { S: [] }
+    };
+    const list = AR.computeDrawList(animData, 0);
+    const names = list.map(d => d.spriteName);
+    if (JSON.stringify(names) !== JSON.stringify(['bottomLayerSprite', 'topLayerSprite'])) {
+        fail('layer draw order', `expected bottomLayerSprite drawn first then topLayerSprite last (on top), got ${JSON.stringify(names)}`);
+    }
+}
+
 console.log('=== computeDrawList composes matrices through a nested SI symbol ===');
 runs++;
 {

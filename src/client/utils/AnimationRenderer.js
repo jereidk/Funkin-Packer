@@ -93,7 +93,15 @@ function walkTimeline(timelineNode, tick, parentMatrix, symbolsByName, out, dept
     if (depth > MAX_RECURSION_DEPTH) return; // guard against a cyclic SI reference
 
     const layers = timelineNode?.TL?.L || [];
-    for (const layer of layers) {
+    // Draw from the LAST layer in the array to the first. Verified against
+    // flixel-animate (the actual Haxe library that consumes this exact
+    // Animation.json schema in-game - FlxAnimate.hx's parseElement()):
+    // `for (i in 0...layers.length) { var layer = layers[layers.length-1-i]; ... }`.
+    // So layer index 0 (as Animate's own Timeline panel lists it, top layer
+    // first) is drawn LAST here and ends up on top - the earlier version drew
+    // array order forward, putting layer 0 furthest back instead.
+    for (let i = layers.length - 1; i >= 0; i--) {
+        const layer = layers[i];
         const frame = resolveFrame(layer.FR || [], tick);
         if (!frame) continue;
 
