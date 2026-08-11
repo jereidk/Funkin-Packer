@@ -154,6 +154,11 @@ class ZipAssetCompressor extends React.Component {
                     path: relativePath,
                     fullPath: relativePath,
                     isFolder: false,
+                    // Files were missing parentPath entirely. Every one of them then
+                    // satisfied the "no parent" test and got listed at the root,
+                    // while directChildren - which matches on parentPath - never
+                    // found a single file to nest under its folder.
+                    parentPath: pathParts.length ? pathParts.join('/') + '/' : null,
                     size: zipEntry._data ? zipEntry._data.uncompressedSize : 0,
                     type: this.getFileType(ext)
                 });
@@ -414,7 +419,9 @@ Timestamp: ${timestamp}
     }
 
     formatBytes(bytes) {
-        if (bytes === 0) return '0 B';
+        // JSZip only exposes uncompressedSize on a private field, so a missing size
+        // is plausible; without this the tree renders "NaN undefined".
+        if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
         const k = 1024;
         const sizes = ['B', 'KB', 'MB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -428,9 +435,8 @@ Timestamp: ${timestamp}
 
         const renderFolder = (folderName, level = 0) => {
             const folderPath = folderName;
-            const children = files.filter(f => f.parentPath === folderPath || f.fullPath.startsWith(folderPath) && f.parentPath.split('/').filter(Boolean).length === folderPath.split('/').filter(Boolean).length);
             const directChildren = files.filter(f => f.parentPath === folderPath);
-            
+
             return (
                 <div key={folderName} style={{ marginLeft: level * 15 }}>
                     <div style={styles.folderItem}>
