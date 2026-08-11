@@ -1,11 +1,21 @@
-import Splitter from './Splitter';
+// Extension is explicit so this module also loads under plain node for the tests
+import Splitter from './Splitter.js';
 
 class Spine extends Splitter {
     static check(data, cb) {
         let lines = data.split('\n');
-        if(lines[0] === undefined || String(lines[0]).trim() !== '') cb(false);
 
-        if(String(lines[lines.length-1]).trim() !== '') cb(false);
+        // Each early disqualification must stop here - without the returns, cb
+        // could fire 2-3 times for the same input (once per check that ran),
+        // and since nothing here short-circuits on a `false`, the LAST call
+        // (the "size:" check) always decides the outcome regardless of what
+        // came before. That happens to be masked today: getSplitterByData
+        // locks in whichever splitter answers `true` first and ignores every
+        // splitter checked afterward, and every format ahead of Spine in that
+        // list has a correctly single-shot check - but it stops being masked
+        // for any file that reaches Spine's check without an earlier match.
+        if(lines[0] === undefined || String(lines[0]).trim() !== '') { cb(false); return; }
+        if(String(lines[lines.length-1]).trim() !== '') { cb(false); return; }
 
         cb(lines[2] && lines[2].trim().indexOf('size:') === 0);
     }
