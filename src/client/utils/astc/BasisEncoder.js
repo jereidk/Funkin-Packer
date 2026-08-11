@@ -87,9 +87,18 @@ class BasisEncoder {
             }
             const jsCode = await jsResponse.text();
 
-            // Execute the glue code in a function scope
-            // The glue code is an IIFE that assigns BASIS to the local scope
-            const basisFactory = eval(jsCode);
+            // The glue code is Emscripten's UMD-style output: `var BASIS = (...)();`
+            // followed by `if (typeof exports===...) {...} else if (typeof define===...) {...}`
+            // with no plain `else` for the browser-global case it actually needs here.
+            // In a browser with neither CommonJS nor AMD, neither branch runs, so the
+            // script's last evaluated statement - and therefore eval(jsCode)'s result -
+            // is `undefined`, not the factory. Worse, this file is an ES module (always
+            // strict mode), where a direct eval's own `var` declarations don't leak into
+            // the enclosing scope either, so even referencing a bare `BASIS` afterward
+            // wouldn't work. `new Function` bodies run non-strict by default regardless
+            // of the caller's mode, so appending an explicit return makes the `var BASIS`
+            // inside resolve correctly.
+            const basisFactory = new Function(jsCode + '\nreturn BASIS;')();
             
             // Create the Basis module with the WASM binary pre-loaded
             this.module = await basisFactory({
