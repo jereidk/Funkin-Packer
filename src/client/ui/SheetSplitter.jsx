@@ -479,12 +479,23 @@ class SheetSplitter extends React.Component {
                     let syms = animLinker.getReferencedSymbols();
                     let orphans = animLinker.validateExistence(this.frames || []);
                     console.log('AnimationLinker: Loaded', refs.length, 'sprites,', syms.length, 'symbols from Animation.json');
-                    
+
                     // Update display with stats
-                    ReactDOM.findDOMNode(this.refs.animationFileName).textContent = 
+                    ReactDOM.findDOMNode(this.refs.animationFileName).textContent =
                         this.animationFileName + ' ✓ — ' + syms.length + ' symbols, ' + refs.length + ' sprites' +
                         (orphans.total > 0 ? ', ⚠ ' + orphans.total + ' orphaned' : '');
                 }
+
+                // AnimationTreeView reads getAnimationLinker()'s singleton state
+                // directly, not from a prop that changed - React has no way to
+                // know it needs to re-render just because loadAnimation() above
+                // mutated that singleton. Without this, AnimationTreeView stayed
+                // on whatever it rendered before this file was chosen (usually
+                // null, since the texture/data file selection's forceUpdate() in
+                // updateFrames() fires earlier, before an Animation.json exists
+                // to load) - permanently empty despite the stats line above
+                // correctly showing the load succeeded.
+                this.forceUpdate();
             };
 
             reader.readAsDataURL(item);
