@@ -708,14 +708,39 @@ class AdvancedSmartSizeSolver {
         }
 
         if (!bestOverall) {
-            // Nothing fit within the size limit. Report the smallest sheet that at
-            // least holds the largest sprite so the caller can surface a real error.
-            const w = Math.min(minWidth, maxSizeLimit);
-            const h = Math.min(minHeight, maxSizeLimit);
+            if (minWidth > maxSizeLimit || minHeight > maxSizeLimit) {
+                // A single sprite genuinely does not fit even alone - report the
+                // smallest sheet that at least holds it, so the caller
+                // (PackProcessor.pack) can surface INVALID_SIZE_ERROR against a
+                // real minWidth/minHeight instead of a size that looks plausible.
+                const w = Math.min(minWidth, maxSizeLimit);
+                const h = Math.min(minHeight, maxSizeLimit);
+                return {
+                    width: w,
+                    height: h,
+                    efficiency: Math.min(1, totalArea / (w * h)),
+                    algorithm: requestedAlgorithm,
+                    rects: []
+                };
+            }
+
+            // Every sprite individually fits, but the full set does not fit
+            // together on any single sheet up to the size limit - multiple
+            // sheets are unavoidable (PackProcessor.pack()'s while loop already
+            // spills whatever doesn't fit onto additional sheets of the size
+            // returned here). The fallback above (sized for just the largest
+            // sprite) used to apply to this case too: on 600 sprites that
+            // together need ~3 sheets' worth of area, it reported ~353x353 -
+            // barely bigger than one sprite - so PackProcessor's while loop
+            // opened one sheet per sprite: 600 sheets instead of 3. A bigger
+            // sheet can only ever need fewer sheets overall, and
+            // maxSizeLimit x maxSizeLimit is the largest area obtainable under
+            // "neither side exceeds the limit" - no other in-cap rectangle can
+            // hold more, so it's the right default here, not a guess.
             return {
-                width: w,
-                height: h,
-                efficiency: Math.min(1, totalArea / (w * h)),
+                width: maxSizeLimit,
+                height: maxSizeLimit,
+                efficiency: Math.min(1, totalArea / (maxSizeLimit * maxSizeLimit)),
                 algorithm: requestedAlgorithm,
                 rects: []
             };

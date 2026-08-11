@@ -103,16 +103,90 @@ validate('two maxed sprites', [
 ], {});
 // A sprite larger than the size limit cannot be placed; the solver must report an
 // empty packing (which PackProcessor turns into INVALID_SIZE_ERROR) rather than
-// inventing a sheet that "fits" it.
+// inventing a sheet that "fits" it. It should still clamp to the size cap exactly
+// (4096x4096), not something arbitrary - PackProcessor's minWidth/minHeight check
+// is what actually raises the error, using this as the width/height to compare.
 runs++;
 {
     const res = Solver.calculateOptimalDimensions([{ frame: { x: 0, y: 0, w: 9000, h: 9000 } }], {});
-    if ((res.rects || []).length !== 0 || res.width <= 0 || res.height <= 0) {
+    if ((res.rects || []).length !== 0 || res.width !== 4096 || res.height !== 4096) {
         failures++;
-        console.log(`FAIL oversized sprite: expected empty packing, got ${res.rects.length} rects in ${res.width}x${res.height}`);
+        console.log(`FAIL oversized sprite: expected empty packing at 4096x4096, got ${res.rects.length} rects in ${res.width}x${res.height}`);
     }
 }
 validate('zero-size sprite', [{ frame: { x: 0, y: 0, w: 0, h: 0 } }, { frame: { x: 0, y: 0, w: 10, h: 10 } }], {});
+
+// --- multi-sheet fallback: content that can never fit on one sheet ---
+//
+// When many individually-small sprites together exceed one sheet's capacity,
+// the solver cannot find a width where ALL of them fit (packWithAlgorithm is
+// all-or-nothing per candidate), so every candidate fails and it falls back.
+// That fallback used to report roughly "the size of the largest single
+// sprite" for this case too - meaning PackProcessor.pack()'s multi-sheet while
+// loop (which keeps opening new sheets of that size until everything is
+// placed) opened one near-empty sheet after another: 600 sprites that need
+// ~3 full sheets' worth of area produced 600 output sheets instead of 3.
+console.log('=== multi-sheet fallback (content that cannot fit on one sheet) ===');
+
+function makeOverflowRects(n, seed) {
+    const rnd = rng(seed);
+    return Array.from({ length: n }, () => ({
+        frame: { x: 0, y: 0, w: 200 + Math.floor(rnd() * 150), h: 200 + Math.floor(rnd() * 150) }
+    }));
+}
+
+for (const n of [300, 600, 1200]) {
+    runs++;
+    const rects = makeOverflowRects(n, n * 7);
+    const totalArea = rects.reduce((s, r) => s + r.frame.w * r.frame.h, 0);
+
+    // sanity: this input really doesn't fit on one 4096x4096 sheet, or the
+    // case isn't testing what it claims to
+    if (totalArea <= 4096 * 4096) {
+        failures++;
+        console.log(`FAIL multi-sheet fixture n=${n}: total area fits in one sheet, fixture is not testing overflow`);
+        continue;
+    }
+
+    const res = Solver.calculateOptimalDimensions(rects, { padding: 2 });
+    // Must aim for (at least close to) the full size cap, not "one sprite's worth"
+    if (res.width < 3000 || res.height < 3000) {
+        failures++;
+        console.log(`FAIL multi-sheet fallback n=${n}: got ${res.width}x${res.height}, expected close to the 4096 cap`);
+    }
+}
+
+// Same fallback, but a single oversized sprite must still win over the
+// multi-sheet branch - it can never fit no matter how many sheets are used.
+// The oversized sprite here is 9000 wide but only 200 tall, so minWidth (from
+// its width) exceeds the cap while minHeight (driven by the OTHER, smaller
+// sprites) does not - each dimension is independently clamped to
+// min(that dimension's minimum, maxSizeLimit), so only width is forced to
+// 4096; what actually matters is that PackProcessor.pack()'s own
+// `width < minWidth` check still catches it and raises INVALID_SIZE_ERROR.
+runs++;
+{
+    const rects = makeOverflowRects(50, 999).concat([{ frame: { x: 0, y: 0, w: 9000, h: 200 } }]);
+    const res = Solver.calculateOptimalDimensions(rects, {});
+    const minWidth = 9000, minHeight = Math.max(...rects.map(r => r.frame.h));
+    if (!(res.width < minWidth || res.height < minHeight)) {
+        failures++;
+        console.log(`FAIL multi-sheet + oversized mix: ${res.width}x${res.height} would NOT trigger INVALID_SIZE_ERROR against minWidth=${minWidth}`);
+    }
+}
+
+// powerOfTwo must still hold in the overflow case. (isPowerOfTwo is defined
+// further down, in the shrinkToFit section - function declarations are
+// hoisted, so it's callable here.)
+runs++;
+{
+    const rects = makeOverflowRects(600, 11);
+    const res = Solver.calculateOptimalDimensions(rects, { powerOfTwo: true });
+    if (!isPowerOfTwo(res.width) || !isPowerOfTwo(res.height)) {
+        failures++;
+        console.log(`FAIL multi-sheet + powerOfTwo: got ${res.width}x${res.height}, not power-of-two`);
+    }
+}
 
 // --- determinism ---
 const fixed = Array.from({ length: 30 }, (_, i) => ({ frame: { x: 0, y: 0, w: 20 + i, h: 40 - (i % 20) } }));
