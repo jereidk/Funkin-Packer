@@ -721,12 +721,27 @@ class AdvancedSmartSizeSolver {
             };
         }
 
+        // Power-of-two mode has a fixed, fully-enumerated candidate set (every
+        // POT from 32 up to the size limit, tried exhaustively above) - there's
+        // no off-grid gap for a binary search to close, and shrinking would
+        // walk width down to a non-POT value, breaking the one guarantee this
+        // mode exists to make.
+        let winner = bestOverall;
+
+        if (!powerOfTwo) {
+            const shrunk = this.shrinkToFit(sprites, bestOverall, bestOverall.algorithm,
+                { ...packOptions, minWidth, minHeight });
+            if (shrunk.width * shrunk.height <= bestOverall.width * bestOverall.height) {
+                winner = shrunk;
+            }
+        }
+
         return {
-            width: bestOverall.width,
-            height: bestOverall.height,
-            efficiency: bestOverall.efficiency,
-            algorithm: bestOverall.algorithm,
-            rects: bestOverall.rects
+            width: winner.width,
+            height: winner.height,
+            efficiency: winner.efficiency,
+            algorithm: winner.algorithm,
+            rects: winner.rects
         };
     }
 
@@ -905,6 +920,46 @@ class AdvancedSmartSizeSolver {
             efficiency: efficiency,
             rects: packed
         };
+    }
+
+    /**
+     * Tighten a candidate to the minimal bounding box that still places every
+     * sprite with the same algorithm. The coarse search above only tries a
+     * fixed grid of widths (32px steps, or coarser once there are many
+     * sprites - see generateCandidateWidths/pickSpread), so the true minimum
+     * for this specific algorithm+arrangement usually sits between two grid
+     * points; binary search finds it directly instead of needing a finer grid
+     * (which would cost a full extra pack at every step it added).
+     *
+     * Bounded by the winning width/height throughout, so this can only match
+     * or improve on `result` - never regress it, even if a packer's fit-or-
+     * fail behaviour isn't perfectly monotonic in bin size (a greedy
+     * heuristic with no backtracking isn't guaranteed to be, in principle,
+     * though it held on every case tested here).
+     */
+    static shrinkToFit(sprites, result, algorithm, options) {
+        const fits = (w, h) => this.packWithAlgorithm(sprites, w, h, algorithm, options);
+
+        let loW = options.minWidth || 1, hiW = result.width;
+        while (hiW - loW > 1) {
+            const mid = Math.floor((loW + hiW) / 2);
+            if (fits(mid, result.height).success) hiW = mid; else loW = mid;
+        }
+
+        const atShrunkWidth = fits(hiW, result.height);
+        if (!atShrunkWidth.success) return result;
+
+        let loH = options.minHeight || 1, hiH = atShrunkWidth.height;
+        while (hiH - loH > 1) {
+            const mid = Math.floor((loH + hiH) / 2);
+            if (fits(hiW, mid).success) hiH = mid; else loH = mid;
+        }
+
+        const final = fits(hiW, hiH);
+        if (!final.success) return result;
+
+        final.algorithm = algorithm;
+        return final;
     }
 
     /**

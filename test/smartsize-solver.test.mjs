@@ -131,6 +131,75 @@ Solver.calculateOptimalDimensions(orig, { padding: 3 });
 runs++;
 if (JSON.stringify(orig) !== snapshot) { failures++; console.log('FAIL: solver mutated its input rects'); }
 
+// --- shrinkToFit: the coarse search only tries a 32px-ish grid of widths, so
+// the true minimal bounding box for the winning algorithm+arrangement usually
+// sits between grid points. A binary-search pass squeezes that out - it must
+// never make the result worse (bigger area) or invalid, and must never break
+// powerOfTwo's one guarantee (both dimensions stay an exact power of two).
+console.log('=== shrinkToFit ===');
+
+function isPowerOfTwo(n) { return n > 0 && (n & (n - 1)) === 0; }
+
+for (let seed = 1; seed <= 15; seed++) {
+    const rnd = rng(seed * 41);
+    const n = 20 + (seed % 6) * 25;
+    const rects = Array.from({ length: n }, () => ({
+        frame: { x: 0, y: 0, w: 8 + Math.floor(rnd() * 120), h: 8 + Math.floor(rnd() * 120) }
+    }));
+    const opts = [{}, { padding: 2 }, { padding: 4, borderPadding: 4 }, { allowRotation: true }][seed % 4];
+
+    validate(`shrinkToFit seed${seed}`, rects, opts);
+}
+
+// powerOfTwo must come out exactly POT on both axes - shrinkToFit is skipped
+// entirely for this mode (see AdvancedSmartSizeSolver.calculateOptimalDimensions).
+for (let seed = 1; seed <= 8; seed++) {
+    runs++;
+    const rnd = rng(seed * 53);
+    const n = 15 + seed * 10;
+    const rects = Array.from({ length: n }, () => ({
+        frame: { x: 0, y: 0, w: 8 + Math.floor(rnd() * 120), h: 8 + Math.floor(rnd() * 120) }
+    }));
+    const res = Solver.calculateOptimalDimensions(rects, { powerOfTwo: true, padding: 2 });
+    if (res.rects.length && (!isPowerOfTwo(res.width) || !isPowerOfTwo(res.height))) {
+        failures++;
+        console.log(`FAIL powerOfTwo seed${seed}: got ${res.width}x${res.height}, not power-of-two`);
+    }
+}
+
+// Never worse than the un-shrunk candidate: call the two pieces directly and
+// confirm the shrunk box is <= the original in area and still places
+// everything (Solver.shrinkToFit/packWithAlgorithm are exposed statics).
+for (let seed = 1; seed <= 10; seed++) {
+    runs++;
+    const rnd = rng(seed * 67);
+    const n = 20 + seed * 8;
+    const sprites = Array.from({ length: n }, () => ({
+        w: 8 + Math.floor(rnd() * 100), h: 8 + Math.floor(rnd() * 100)
+    }));
+    const algorithm = ['maxrects_bssf', 'guillotine_baf', 'shelf', 'skyline'][seed % 4];
+    const packOpts = { padding: 2, borderPadding: 0, allowRotation: false, maxSizeLimit: 4096 };
+
+    // an intentionally loose starting box, like a coarse-grid candidate would be
+    const totalArea = sprites.reduce((s, r) => s + r.w * r.h, 0);
+    const side = Math.ceil(Math.sqrt(totalArea / 0.6));
+    const original = Solver.packWithAlgorithm(sprites, side, side, algorithm, packOpts);
+
+    if (!original.success) continue; // loose box should always succeed; skip defensively if not
+
+    original.algorithm = algorithm;
+    const shrunk = Solver.shrinkToFit(sprites, original, algorithm, { ...packOpts, minWidth: 1, minHeight: 1 });
+
+    if (shrunk.width * shrunk.height > original.width * original.height) {
+        failures++;
+        console.log(`FAIL shrinkToFit regression seed${seed}: ${shrunk.width}x${shrunk.height} > original ${original.width}x${original.height}`);
+    }
+    if (shrunk.rects.length !== sprites.length) {
+        failures++;
+        console.log(`FAIL shrinkToFit lost sprites seed${seed}: ${shrunk.rects.length}/${sprites.length}`);
+    }
+}
+
 console.log(`\n${runs - failures}/${runs} checks passed`);
 
 // --- timing on a realistic worst case ---
