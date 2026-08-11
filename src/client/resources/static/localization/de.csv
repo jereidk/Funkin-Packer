@@ -89,6 +89,7 @@ OLD_BROWSER_MESSAGE1;Ihr Browser ist für diese App leider zu alt...
 OLD_BROWSER_MESSAGE2;Bitte benutzen Sie einen der folgenden Browser:
 EXPORTER_ERROR;Export Error: %s
 CUSTOM_EXPORTER_ERROR;Template Error: %s
+DOWNLOAD_ERROR;Download Error: %s
 ABOUT_HOMEPAGE;Startseite:
 ABOUT_SOURCES;Quellcode:
 ABOUT_BUGS;Bugs melden:

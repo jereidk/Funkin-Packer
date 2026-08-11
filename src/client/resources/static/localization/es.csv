@@ -96,6 +96,7 @@ ABOUT_WEBPACK_VERSION;Webpack plugin:
 ABOUT_CONTRIBUTORS;Contribuyentes:
 EXPORTER_ERROR;Error de exportación: %s
 CUSTOM_EXPORTER_ERROR;Error de plantilla: %s
+DOWNLOAD_ERROR;Error de descarga: %s
 FILE_EXT;Extensión de fichero:
 DOCUMENTATION;documentación
 SAVE_CHANGES_CONFIRM;¿Guardar los cambios de proyecto?

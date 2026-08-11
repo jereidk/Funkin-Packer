@@ -96,6 +96,7 @@ ABOUT_WEBPACK_VERSION;Webpack plugin:
 ABOUT_CONTRIBUTORS;Contributors:
 EXPORTER_ERROR;Export error: %s
 CUSTOM_EXPORTER_ERROR;Template error: %s
+DOWNLOAD_ERROR;Download error: %s
 FILE_EXT;File extension:
 DOCUMENTATION;documentation
 SAVE_CHANGES_CONFIRM;Save project changes?

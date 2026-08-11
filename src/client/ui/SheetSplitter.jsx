@@ -236,35 +236,46 @@ class SheetSplitter extends React.Component {
             this.buffer.width = (disableuntrim && trimmed) ? item.spriteSourceSize.w : ssw;
             this.buffer.height = (disableuntrim && trimmed) ? item.spriteSourceSize.h : ssh;
 
+            // A 0-sized canvas makes toDataURL() return "data:," which becomes an
+            // empty, unreadable entry in the zip. Same guard as doRepack().
+            var isEmpty = this.buffer.width === 0 || this.buffer.height === 0;
+
+            if(isEmpty) {
+                this.buffer.width = 1;
+                this.buffer.height = 1;
+            }
+
             ctx.clearRect(0, 0, this.buffer.width, this.buffer.height);
 
-            if(item.rotated) {
-                ctx.save();
+            if(!isEmpty) {
+                if(item.rotated) {
+                    ctx.save();
 
-                ctx.translate(item.spriteSourceSize.x + item.spriteSourceSize.w/2, item.spriteSourceSize.y + item.spriteSourceSize.h/2);
-                ctx.rotate(this.state.splitter.inverseRotation ? Math.PI/2 : -Math.PI/2);
+                    ctx.translate(item.spriteSourceSize.x + item.spriteSourceSize.w/2, item.spriteSourceSize.y + item.spriteSourceSize.h/2);
+                    ctx.rotate(this.state.splitter.inverseRotation ? Math.PI/2 : -Math.PI/2);
 
-                let dx = trimmed ? item.spriteSourceSize.y - item.spriteSourceSize.h/2 : -item.spriteSourceSize.h/2;
-                let dy = trimmed ? -(item.spriteSourceSize.x + item.spriteSourceSize.w/2) : -item.spriteSourceSize.w/2;
+                    let dx = trimmed ? item.spriteSourceSize.y - item.spriteSourceSize.h/2 : -item.spriteSourceSize.h/2;
+                    let dy = trimmed ? -(item.spriteSourceSize.x + item.spriteSourceSize.w/2) : -item.spriteSourceSize.w/2;
 
-                ctx.drawImage(this.texture,
-                    item.frame.x, item.frame.y,
-                    item.frame.h, item.frame.w,
-                    dx, dy,
-                    item.spriteSourceSize.h, item.spriteSourceSize.w);
+                    ctx.drawImage(this.texture,
+                        item.frame.x, item.frame.y,
+                        item.frame.h, item.frame.w,
+                        dx, dy,
+                        item.spriteSourceSize.h, item.spriteSourceSize.w);
 
-                ctx.restore();
-            }
-            else {
+                    ctx.restore();
+                }
+                else {
 
-                let dx = trimmed ? 0 : item.spriteSourceSize.x;
-                let dy = trimmed ? 0 : item.spriteSourceSize.y;
+                    let dx = trimmed ? 0 : item.spriteSourceSize.x;
+                    let dy = trimmed ? 0 : item.spriteSourceSize.y;
 
-                ctx.drawImage(this.texture,
-                    item.frame.x, item.frame.y,
-                    item.frame.w, item.frame.h,
-                    dx, dy,
-                    item.spriteSourceSize.w, item.spriteSourceSize.h);
+                    ctx.drawImage(this.texture,
+                        item.frame.x, item.frame.y,
+                        item.frame.w, item.frame.h,
+                        dx, dy,
+                        item.spriteSourceSize.w, item.spriteSourceSize.h);
+                }
             }
 
             let ext = item.name.split('.').pop().toLowerCase();
@@ -282,17 +293,24 @@ class SheetSplitter extends React.Component {
             files.push({
                 name: item.name,
                 content: base64,
-                base64: base64
+                base64: true
             });
         }
 
         // Use custom export name if provided, otherwise fallback to texture name
         let exportName = this.exportNameInput ? this.exportNameInput.value : this.textureName;
         let zipName = this.zipNameInput ? this.zipNameInput.value : this.textureName;
-        
-        Downloader.run(files, zipName + '.zip');
 
-        Observer.emit(GLOBAL_EVENT.HIDE_SHADER);
+        // Downloader.run is async and may also throw synchronously while validating
+        // entries - keep the shader up until it settles, and never leave it stuck.
+        Promise.resolve()
+            .then(() => Downloader.run(files, zipName + '.zip'))
+            .catch(e => {
+                Observer.emit(GLOBAL_EVENT.SHOW_MESSAGE, I18.f('DOWNLOAD_ERROR', (e && e.message) || e));
+            })
+            .then(() => {
+                Observer.emit(GLOBAL_EVENT.HIDE_SHADER);
+            });
     }
 
     selectTexture(e) {
