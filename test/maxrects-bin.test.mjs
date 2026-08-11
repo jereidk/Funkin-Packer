@@ -140,5 +140,66 @@ for (const method of methods) {
     }
 }
 
+console.log('=== large multi-sheet ensemble stays fast (PackProcessor.js LARGE_ENSEMBLE_THRESHOLD fast path) ===');
+{
+    // Regression guard for the fast set PackProcessor.js uses once a sprite set
+    // is large enough to need multiple sheets. ContactPointRule used to be in
+    // that set - same 9/9 "rescue" rate as BottomLeftRule on small, single-sheet
+    // cases, so it looked like a fine choice there - but its scoring scans every
+    // already-placed rect per candidate free rect (O(free x placed) per round,
+    // the other methods here are O(free)), which stays cheap while a sheet is
+    // nearly empty and stops being cheap once a few hundred sprites have landed
+    // on it. On 1200 sprites needing 6 sheets it took 5.5-12s alone while not
+    // even winning (6-7 sheets, same or worse than the methods below); the full
+    // fast-set ensemble (3 methods x 2 rotations = 6 packing passes) must stay
+    // well clear of that.
+    function packAllSheets(rects, width, height, method, rot) {
+        let remaining = rects.map(r => ({ frame: { ...r.frame }, name: r.name }));
+        let sheets = 0, guard = 0;
+        while (remaining.length && guard++ < 1000) {
+            const packer = new MaxRectsBin(width, height, rot, 2);
+            const placed = packer.pack(remaining, method);
+            if (!placed.length) return { sheets: -1 };
+            sheets++;
+            const names = new Set(placed.map(p => p.name));
+            remaining = remaining.filter(r => !names.has(r.name));
+        }
+        return { sheets, leftover: remaining.length };
+    }
+
+    const rnd = rng(31);
+    const rects = Array.from({ length: 1200 }, (_, i) => ({
+        frame: { x: 0, y: 0, w: 200 + Math.floor(rnd() * 150), h: 200 + Math.floor(rnd() * 150) },
+        name: 'r' + i
+    }));
+
+    const fastSet = ['BestShortSideFit', 'BottomLeftRule', 'BestAreaFit'];
+    const t0 = Date.now();
+    let bestSheets = Infinity;
+
+    for (const method of fastSet) {
+        for (const rotate of [false, true]) {
+            runs++;
+            const result = packAllSheets(rects, 4096, 4096, method, rotate);
+            if (result.sheets === -1 || result.leftover) {
+                fail(`fast-set overflow ${method} rotate=${rotate}`, 'failed to place all sprites across sheets');
+                continue;
+            }
+            bestSheets = Math.min(bestSheets, result.sheets);
+        }
+    }
+
+    const elapsed = Date.now() - t0;
+    console.log(`  1200 sprites, 6 combos: ${elapsed}ms, best ${bestSheets} sheets`);
+
+    runs++;
+    // Generous bound (real machines measured ~0.7-2.2s) - this is a regression
+    // trip-wire against ContactPointRule-style O(free x placed) costs sneaking
+    // back into this set, not a tight performance target.
+    if (elapsed > 8000) {
+        fail('fast-set overflow timing', `took ${elapsed}ms for the 6-combo fast set, expected well under 8000ms`);
+    }
+}
+
 console.log(`\n${runs - failures}/${runs} checks passed`);
 process.exit(failures ? 1 : 0);

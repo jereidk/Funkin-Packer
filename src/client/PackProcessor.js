@@ -201,11 +201,22 @@ class PackProcessor {
         // 60 randomized cases with a sheet sized tight enough that plain
         // BestShortSideFit (no rotation - what a non-Optimal user gets) failed to
         // fit everything, trying the rest of the ensemble rescued a same-sheet fit
-        // in 9/9 of those. ContactPointRule+rotation alone caught 9/9 of the
-        // rescues, BestShortSideFit+rotation caught 8/9, BestAreaFit 7/9 - so this
-        // subset keeps nearly all of the practical benefit at a third of the cost.
-        // MaxRectsPacker is left out of the fast path since its performance at
-        // this scale hasn't been measured here.
+        // in 9/9 of those - BottomLeftRule+rotation alone also catches 9/9 of the
+        // rescues (re-verified after the swap below), BestShortSideFit+rotation 8/9,
+        // BestAreaFit 7/9 - so this subset keeps nearly all of the practical benefit
+        // at a third of the cost.
+        //
+        // ContactPointRule was in this list originally (same 9/9 rescue rate at
+        // small N) but turned out to scale badly once multi-sheet packing was
+        // fixed to use full-size sheets: its scoring scans every already-placed
+        // rect per candidate free rect (O(free x placed) per round, the other
+        // methods are O(free)), which is cheap while a sheet is nearly empty but
+        // not once a few hundred sprites have landed on it. Measured on 1200
+        // sprites needing 6 sheets: BestShortSideFit/BestAreaFit/BottomLeftRule
+        // all finish in 200-550ms; ContactPointRule took 5.5s with no rotation
+        // and 12s with it - and didn't even win (6-7 sheets, same or worse than
+        // the cheap methods). MaxRectsPacker is left out of the fast path since
+        // its performance at this scale hasn't been measured here.
         const LARGE_ENSEMBLE_THRESHOLD = 150;
 
         let getAllPackers = () => {
@@ -214,7 +225,7 @@ class PackProcessor {
             if (rects.length > LARGE_ENSEMBLE_THRESHOLD) {
                 let fastMethods = [
                     MaxRectsBinPack.methods.BestShortSideFit,
-                    MaxRectsBinPack.methods.ContactPointRule,
+                    MaxRectsBinPack.methods.BottomLeftRule,
                     MaxRectsBinPack.methods.BestAreaFit
                 ];
                 for (let method of fastMethods) {
