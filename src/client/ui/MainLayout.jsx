@@ -16,6 +16,7 @@ import ASTCConverter from './ASTCConverter.jsx';
 import PngCompressorPanel from './PngCompressorPanel.jsx';
 import ZipAssetCompressor from './ZipAssetCompressor.jsx';
 import LogConsole from './LogConsole.jsx';
+import ErrorBoundary from './ErrorBoundary.jsx';
 
 import {Observer, GLOBAL_EVENT} from '../Observer';
 
@@ -108,23 +109,31 @@ class MainLayout extends React.Component {
         return (
 
             <div className="main-wrapper">
-                <MainHeader/>
+                <ErrorBoundary name="Cabecera"><MainHeader/></ErrorBoundary>
 
                 <div className="main-layout border-color-gray">
-                    <ImagesList/>
-                    <PackProperties/>
-                    <PackResults/>
+                    {/*
+                      Panels are wrapped individually so one crashing panel names
+                      itself in the report instead of taking the whole app down.
+                      LogConsole is deliberately left OUTSIDE every boundary: it is
+                      the only place the error is readable, so it must survive.
+                    */}
+                    <ErrorBoundary name="Lista de imágenes"><ImagesList/></ErrorBoundary>
+                    <ErrorBoundary name="Propiedades"><PackProperties/></ErrorBoundary>
+                    <ErrorBoundary name="Resultados"><PackResults/></ErrorBoundary>
                     <OldBrowserBlocker/>
                     {/*about*/}
-                    {editCustomExporter}
-                    {sheetSplitter}
-                    {updater}
+                    <ErrorBoundary name="Ventanas">
+                        {editCustomExporter}
+                        {sheetSplitter}
+                        {updater}
+                        {this.state.messageBox}
+                    </ErrorBoundary>
                     {shader}
-                    {this.state.messageBox}
-                    <MusicPlayer/>
-                    <ASTCConverter/>
-                    <PngCompressorPanel/>
-                    <ZipAssetCompressor/>
+                    <ErrorBoundary name="Reproductor"><MusicPlayer/></ErrorBoundary>
+                    <ErrorBoundary name="Conversor ASTC"><ASTCConverter/></ErrorBoundary>
+                    <ErrorBoundary name="Compresor PNG"><PngCompressorPanel/></ErrorBoundary>
+                    <ErrorBoundary name="Compresor de ZIP"><ZipAssetCompressor/></ErrorBoundary>
                     <LogConsole/>
                 </div>
             </div>
