@@ -22,6 +22,99 @@ import { encodePng } from './png/PngEncoder.js';
 
 const deflate = buf => pako.deflate(buf, { level: 9 });
 
+// ---------------------------------------------------------------- worker pool
+
+// Encoding is seconds of tight loops. Run it in a worker so the UI keeps
+// painting, and fall back to the main thread if the worker cannot be created -
+// a bundling or base-path problem then costs responsiveness, not the feature.
+const WORKER_UNAVAILABLE = Symbol('worker-unavailable');
+
+let worker = null;
+let workerUsable = typeof Worker !== 'undefined';
+let nextJobId = 1;
+const pendingJobs = new Map();
+
+function dropWorker(reason) {
+    workerUsable = false;
+
+    for (const job of pendingJobs.values()) job.reject(WORKER_UNAVAILABLE);
+    pendingJobs.clear();
+
+    if (worker) {
+        try { worker.terminate(); } catch (e) { /* already gone */ }
+        worker = null;
+    }
+
+    console.warn('[PngCompressor] Encoding on the main thread:', reason);
+}
+
+function ensureWorker() {
+    if (!workerUsable) return null;
+    if (worker) return worker;
+
+    try {
+        worker = new Worker(new URL('./png/PngWorker.js', import.meta.url));
+
+        worker.onmessage = event => {
+            const data = event.data || {};
+            const job = pendingJobs.get(data.id);
+            if (!job) return;
+
+            pendingJobs.delete(data.id);
+
+            if (data.ok) job.resolve(data.result);
+            else job.reject(Object.assign(new Error(data.error), { encodeError: !!data.encodeError }));
+        };
+
+        worker.onerror = e => dropWorker((e && e.message) || 'worker error');
+
+        return worker;
+    }
+    catch (e) {
+        dropWorker((e && e.message) || String(e));
+        return null;
+    }
+}
+
+function encodeInWorker(image, options) {
+    const active = ensureWorker();
+    if (!active) return Promise.reject(WORKER_UNAVAILABLE);
+
+    return new Promise((resolve, reject) => {
+        const id = nextJobId++;
+        pendingJobs.set(id, { resolve, reject });
+
+        // Copy first: the caller may still own `image.data` (an ImageData they
+        // passed in), and transferring would detach it out from under them.
+        const pixels = new Uint8Array(image.data);
+
+        try {
+            active.postMessage({
+                id: id,
+                image: { data: pixels, width: image.width, height: image.height },
+                options: options
+            }, [pixels.buffer]);
+        }
+        catch (e) {
+            pendingJobs.delete(id);
+            dropWorker((e && e.message) || String(e));
+            reject(WORKER_UNAVAILABLE);
+        }
+    });
+}
+
+async function encode(image, options) {
+    try {
+        return await encodeInWorker(image, options);
+    }
+    catch (e) {
+        // A genuine encoder failure must surface; only transport problems retry.
+        if (e !== WORKER_UNAVAILABLE && e && e.encodeError) throw e;
+
+        return encodePng(image, { deflate, ...options });
+    }
+}
+
 /**
  * Map the 0-1 quality setting onto a palette budget.
  * At the top of the range nothing is thrown away at all.
@@ -173,8 +266,7 @@ export async function compressPngDetailed(input, fileName, options = {}) {
     const { image, originalBytes } = await toImageData(input);
 
     const plan = planFromQuality(options.quality);
-    const result = encodePng(image, {
-        deflate,
+    const result = await encode(image, {
         quantize: plan.quantize,
         maxColors: plan.maxColors,
         dither: options.dither !== false,

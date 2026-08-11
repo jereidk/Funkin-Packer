@@ -10,6 +10,9 @@
     --success-color: #2ecc71;
     --error-color: #ff6b6b;
     --warning-color: #ff9800;
+    /* transparency checkerboard squares */
+    --checker-light: #3a3a4c;
+    --checker-dark: #2e2e3e;
 }
 
 [data-theme="light"] {
@@ -23,6 +26,8 @@
     --success-color: #4caf50;
     --error-color: #f44336;
     --warning-color: #ff9800;
+    --checker-light: #ffffff;
+    --checker-dark: #c4c4c4;
 }
 
 html, body {
@@ -490,8 +495,31 @@ html, body {
     background: #000;
 }
 
+/*
+ * Transparency checkerboard. grid.png is a fixed white/#c4c4c4 tile, so the
+ * sprite canvas stayed a bright white slab in dark mode. Drawing it with
+ * gradients instead lets the squares follow the theme; light mode keeps the
+ * original colours.
+ */
 .grid-back {
-    background: url("../images/grid.png");
+    background-color: var(--checker-light);
+    background-image:
+        linear-gradient(45deg, var(--checker-dark) 25%, transparent 25%, transparent 75%, var(--checker-dark) 75%),
+        linear-gradient(45deg, var(--checker-dark) 25%, transparent 25%, transparent 75%, var(--checker-dark) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+}
+
+/*
+ * Panel surfaces. These used the back-white palette utility, which is a literal
+ * #ffffff and ignores the theme - the frame list, the properties column and the
+ * sprite canvas panel all stayed white however dark the rest of the app was.
+ * color-gray.css loads after this file, so a semantic class is used rather than
+ * fighting that rule's specificity.
+ */
+.panel-surface {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
 .results-view-footer .btn-back-color {

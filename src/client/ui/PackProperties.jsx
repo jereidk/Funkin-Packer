@@ -312,7 +312,7 @@ class PackProperties extends React.Component {
         let hasOrder = sparrowStore.hasOrder();
 
         return (
-            <div className="props-list back-white">
+            <div className="props-list panel-surface">
                 {/* Smart Size Preview - Real-time solver feedback */}
                 <SmartSizePreview />
                 

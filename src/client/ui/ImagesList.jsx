@@ -528,7 +528,7 @@ class ImagesList extends React.Component {
         let dropHelp = Object.keys(this.state.images).length > 0 ? null : (<div ref="dropHelp" className="image-drop-help">{I18.f("IMAGE_DROP_HELP")}</div>);
 
         return (
-            <div className="images-list border-color-gray back-white">
+            <div className="images-list border-color-gray panel-surface">
 
                 <div className="images-controllers border-color-gray">
 
