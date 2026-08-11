@@ -1,7 +1,7 @@
 import React from 'react';
 import JSZip from 'jszip';
 import pako from 'pako';
-import imageCompression from 'browser-image-compression';
+import { compressPng as compressPngUtil } from '../utils/PngCompressor';
 
 const LOG_PREFIX = '[ZipCompressor]';
 
@@ -337,25 +337,14 @@ Timestamp: ${timestamp}
 
     async compressPng(data, fileName, errors, warnings) {
         try {
-            const blob = new Blob([data], { type: 'image/png' });
-            const file = new File([blob], fileName, { type: 'image/png' });
-
-            const options = {
-                maxSizeMB: Infinity,
-                useWebWorker: true,
-                initialQuality: this.state.pngQuality,
-                alwaysKeepResolution: true,
-                fileType: 'image/png'
-            };
-
-            if (this.state.pngStripMetadata) {
-                options.exifTransform = () => null;
-            }
-
-            const compressedFile = await imageCompression(file, options);
-            const compressedData = new Uint8Array(await compressedFile.arrayBuffer());
-            
-            return compressedData;
+            // Shared encoder: quantizes to a palette and picks the best scanline
+            // filters. The previous browser-image-compression call could not shrink
+            // a PNG at all - canvas ignores `quality` for image/png - and returns
+            // the original bytes when it cannot do better.
+            return await compressPngUtil(data, fileName, {
+                quality: this.state.pngQuality,
+                stripMetadata: this.state.pngStripMetadata
+            });
         } catch (error) {
             errors.push({ file: fileName, error: error.message });
             throw error;
