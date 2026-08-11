@@ -1,9 +1,17 @@
+// Longest we will wait for the browser to finish decoding the images it was
+// given. img.complete becomes true even for a failed/broken image per spec, so
+// this is defense-in-depth against a browser inconsistency rather than a path
+// this codebase is known to hit - matches the bound already used in
+// ZipLoader.js for the same "poll .complete forever" pattern.
+const MAX_DECODE_WAIT = 60000;
+
 class LocalImagesLoader {
 
     constructor() {
         this.data = null;
         this.loaded = {};
         this.loadedCnt = 0;
+        this.waited = 0;
 
         this.onProgress = null;
         this.onEnd = null;
@@ -23,6 +31,7 @@ class LocalImagesLoader {
         this.onProgress = onProgress;
         this.onEnd = onEnd;
         this.onError = onError;
+        this.waited = 0;
 
         this.loadNext();
     }
@@ -113,11 +122,21 @@ class LocalImagesLoader {
         if (ready) {
             console.log('[LocalImagesLoader] All images loaded, total:', Object.keys(this.loaded).length);
             if (this.onEnd) this.onEnd(this.loaded);
+            return;
         }
-        else {
-            console.warn('[LocalImagesLoader] Waiting for images to complete:', notReadyKeys);
-            setTimeout(this.waitImages, 50);
+
+        this.waited += 50;
+
+        if (this.waited >= MAX_DECODE_WAIT) {
+            console.error(`[LocalImagesLoader] Gave up waiting for ${notReadyKeys.length} image(s) after ` +
+                          `${MAX_DECODE_WAIT / 1000}s, dropping them:`, notReadyKeys);
+            for (let key of notReadyKeys) delete this.loaded[key];
+            if (this.onEnd) this.onEnd(this.loaded);
+            return;
         }
+
+        console.warn('[LocalImagesLoader] Waiting for images to complete:', notReadyKeys);
+        setTimeout(this.waitImages, 50);
     }
 }
 

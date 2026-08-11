@@ -11,45 +11,41 @@
  * This is OPT-IN only - user must explicitly check "Generate Animation.json" option.
  */
 
-import { smartSortImages, cleanPrefix } from './common';
+// Extension is explicit so this module also loads under plain node for the tests
+import { smartSortImages, cleanPrefix } from './common.js';
 
 /**
  * Group frames by prefix using cleanPrefix (same as Sparrow.js)
  * Maintains sort order using smartSortImages
- * 
- * Special handling for numeric-only names: when all names are purely numeric
- * (like "0", "1", "2", ... or "000", "001", ...), they are kept as separate
- * groups rather than being combined into a single group with empty prefix.
+ *
+ * Special handling for numeric-only names: cleanPrefix strips ALL trailing
+ * digits, so a purely-numeric name like "0" or "042" reduces to "" - every
+ * such frame would otherwise collapse into one shared nameless group. Any
+ * frame whose name reduces to "" falls back to using its own full name as
+ * the prefix instead, so each becomes its own standalone group.
+ *
+ * This is checked per frame, not once for the whole set: an earlier version
+ * only special-cased sets where EVERY name was purely numeric, so a mixed
+ * set (bare "0", "1" alongside "idle_0", "idle_1") still let the numeric
+ * ones collide into a shared "" group while "idle_0"/"idle_1" correctly
+ * grouped under "idle_".
  */
 function groupFramesByPrefix(rects) {
     let groups = new Map();
-    
+
     // Sort frames first to maintain order
     let sortedRects = [...rects].sort((a, b) => {
         return smartSortImages(a.name, b.name);
     });
-    
-    // Check if all names are purely numeric (no prefix case)
-    const allNumeric = sortedRects.every(rect => {
-        const name = (rect.name || rect.originalFile || '').replace(/\.[^.]+$/, '');
-        return /^\d+$/.test(name);
-    });
-    
+
     for (let rect of sortedRects) {
         let name = rect.name || rect.originalFile || '';
         // Remove extension if present
         name = name.replace(/\.[^.]+$/, '');
-        
-        let prefix;
-        if (allNumeric) {
-            // For purely numeric names, use the full name as the prefix
-            // This creates one group per frame, preserving the numeric sequence
-            prefix = name;
-        } else {
-            // Use cleanPrefix for normal names (same as Sparrow.js)
-            prefix = cleanPrefix(name);
-        }
-        
+
+        let prefix = cleanPrefix(name);
+        if (!prefix) prefix = name;
+
         if (!groups.has(prefix)) {
             groups.set(prefix, []);
         }
@@ -58,7 +54,7 @@ function groupFramesByPrefix(rects) {
             rect: rect
         });
     }
-    
+
     return groups;
 }
 
