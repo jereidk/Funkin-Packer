@@ -100,25 +100,30 @@ class SpritesPlayer extends React.Component {
     }
 
     componentDidUpdate(prevProps) {
-        // Only re-run setup if data actually changed (optimization)
         const dataChanged = prevProps.data !== this.props.data;
         const startChanged = prevProps.start !== this.props.start;
 
-        if (this.props.start) {
-            if (dataChanged) {
-                this.setup();
-            } else if (startChanged) {
-                // Just starting, but data is the same
-                // Need to render the current frame, not just forceUpdate
-                this.setState({ currentFrame: 0 }, () => {
-                    this.renderCurrentFrame();
-                });
-            }
-        } else {
-            // Stop animation and sync isPlaying state
-            if (this.animationTimer) {
-                this.stopAnimation();
-            }
+        // A new pack result must always rebuild this.textures/groupedAnimations,
+        // whether or not the player panel happens to be visible right now - it
+        // usually isn't, since packing runs automatically in the background
+        // while the player stays closed. The previous version only acted on
+        // dataChanged while nested inside `if (this.props.start)`, so a pack
+        // completing with the player closed was silently dropped: setup() never
+        // ran, this.textures stayed empty, and even opening the player
+        // afterwards showed "0 sprites selected" forever, because by then
+        // dataChanged was false (the data hadn't changed since the drop) and
+        // only a plain re-render of an already-empty frame happened.
+        if (dataChanged) {
+            this.setup();
+        } else if (this.props.start && startChanged) {
+            // Just starting, but data is the same - render the current frame
+            this.setState({ currentFrame: 0 }, () => {
+                this.renderCurrentFrame();
+            });
+        }
+
+        if (!this.props.start && this.animationTimer) {
+            this.stopAnimation();
         }
     }
 
@@ -188,11 +193,18 @@ class SpritesPlayer extends React.Component {
 
         this.lastPropsData = this.props.data;
         
-        // Calculate initial groups
+        // Calculate initial groups. updateCurrentTextures() reads groups back
+        // out of this.state.groupedAnimations, so it has to run in setState's
+        // callback, not right after setState() is called - setState doesn't
+        // apply synchronously, so calling it immediately after read back the
+        // previous (usually empty, on first pack) state and always computed
+        // zero textures for the "Todos"/all aggregate, even though the
+        // per-group buttons (which read state.groupedAnimations at actual
+        // render time, after the update flushed) showed the right counts.
         const groups = this.calculateGroups();
-        this.setState({ groupedAnimations: groups });
-        
-        this.updateCurrentTextures();
+        this.setState({ groupedAnimations: groups }, () => {
+            this.updateCurrentTextures();
+        });
     }
 
     /**
