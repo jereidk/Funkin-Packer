@@ -8,10 +8,16 @@
  * from the resources directory to avoid webpack bundling issues with the Emscripten
  * generated code that contains Node.js specific requires.
  * 
- * Output format: KTX2 container with UASTC/ETC1S/Basis compressed data.
- * 
+ * Output format: encode() returns a plain astcenc-format .astc file (see
+ * AstcFile.js) - the encoder library itself only produces a KTX2 container,
+ * which gets unwrapped to the raw ASTC block stream before returning. The
+ * original KTX2 bytes are still available on the result as `.ktx2` if ever
+ * needed, but `.astc` is what every consumer in this codebase uses.
+ *
  * Reference: https://github.com/BinomialLLC/basis_universal
  */
+
+import AstcFile from './AstcFile.js';
 
 // Block size to ASTC format mapping (confirmed with actual module inspection)
 // Uses cASTC_LDR_* format names as exposed by Module.basis_tex_format
@@ -198,10 +204,13 @@ class BasisEncoder {
             }
             encoder.setFormatMode(formatValue);
 
-            // Configure KTX2 output
+            // Configure KTX2 output. Supercompression stays OFF: the real consumer
+            // here (see AstcFile.js) reads the raw ASTC block stream straight out
+            // of the KTX2 level data - turning this on would Zstd-compress that
+            // data, and the caller has no decompressor for it.
             encoder.setCreateKTX2File(true);
-            encoder.setKTX2UASTCSupercompression(true);
-            
+            encoder.setKTX2UASTCSupercompression(false);
+
             // Colorspace settings
             encoder.setPerceptual(sRGB);
             encoder.setKTX2AndBasisSRGBTransferFunc(sRGB);
@@ -224,15 +233,25 @@ class BasisEncoder {
             // Extract the actual encoded data from the buffer
             const ktx2Data = outputBuffer.slice(0, ktx2Size);
 
-            console.log(`[BasisEncoder] Encoded ${ktx2Size} bytes`);
+            console.log(`[BasisEncoder] Encoded ${ktx2Size} bytes (KTX2 container)`);
 
             // Clean up encoder
             encoder.delete();
             this.encoder = null;
 
+            // The real consumer wants a plain astcenc-format .astc file (16-byte
+            // header + raw blocks), not a KTX2 container - see AstcFile.js for why.
+            // The KTX2 wrapper only exists here as a byproduct of how the encoder
+            // library is driven; unwrap it before handing data back to the caller.
+            const level0 = AstcFile.extractLevel0FromKtx2(ktx2Data);
+            const astcData = AstcFile.wrapRawBlocks(level0.blockBytes, level0.width, level0.height, blockSize);
+
+            console.log(`[BasisEncoder] Unwrapped to ${astcData.length} byte .astc file`);
+
             return {
+                astc: astcData,
                 ktx2: ktx2Data,
-                size: ktx2Size,
+                size: astcData.length,
                 width,
                 height,
                 blockSize,

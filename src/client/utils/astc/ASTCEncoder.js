@@ -19,6 +19,8 @@
  * - ASTC format: https://registry.khronos.org/ASTC/specs/ASTC-spec.html
  */
 
+import AstcFile from './AstcFile.js';
+
 /**
  * Map block size names to ASTC internal formats
  * Values verified against Khronos OpenGL extension registry
@@ -246,8 +248,12 @@ class ASTCEncoder {
                 outputView.set(encoded, offset);
             }
         }
-        
-        return output;
+
+        // Real consumers (e.g. OpenFL/Lime's Context3D.createASTCTexture(),
+        // via ARM's astcenc file format) expect the 16-byte astcenc header
+        // - magic + block dims + width/height - directly in front of the
+        // block stream, not a bare block stream on its own.
+        return AstcFile.wrapRawBlocks(outputView, width, height, blockSize).buffer;
     }
 
     /**
@@ -284,111 +290,6 @@ class ASTCEncoder {
         }
         
         return blockPixels;
-    }
-
-    /**
-     * Create a KTX2 container for ASTC data
-     * @param {ArrayBuffer} astcData - Raw ASTC data
-     * @param {number} width - Image width
-     * @param {number} height - Image height
-     * @param {string} blockSize - Block size (e.g., '4x4')
-     * @returns {ArrayBuffer} - KTX2 formatted data
-     */
-    createKTX2(astcData, width, height, blockSize) {
-        const block = this.blockSizes[blockSize] || this.blockSizes['4x4'];
-        
-        // KTX2 header is exactly 80 bytes
-        const headerSize = 80;
-        const header = new Uint8Array(headerSize);
-        
-        // KTX2 identifier
-        const identifier = new Uint8Array([
-            0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x0D, 0x0A, 0x1A, 0x0A
-        ]);
-        header.set(identifier);
-        
-        // Helper to write u32 little-endian
-        const writeU32 = (offset, value) => {
-            header[offset] = value & 0xFF;
-            header[offset + 1] = (value >> 8) & 0xFF;
-            header[offset + 2] = (value >> 16) & 0xFF;
-            header[offset + 3] = (value >> 24) & 0xFF;
-        };
-        
-        // Helper to write u64 little-endian
-        const writeU64 = (offset, value) => {
-            writeU32(offset, value & 0xFFFFFFFF);
-            writeU32(offset + 4, Math.floor(value / 0x100000000));
-        };
-        
-        // Header fields (offsets per KTX2 spec)
-        writeU32(12, 0);        // vkFormat
-        writeU32(16, 1);        // typeSize
-        writeU32(20, width);    // pixelWidth
-        writeU32(24, height);   // pixelHeight
-        writeU32(28, 1);        // pixelDepth
-        writeU32(32, 0);        // layerCount
-        writeU32(36, 1);        // faceCount
-        writeU32(40, 1);        // levelCount
-        writeU32(44, 0);         // supercompressionScheme
-        
-        // DFD
-        const dfdSize = 28;
-        const dfdOffset = headerSize;
-        writeU32(48, dfdOffset); // dfdByteOffset
-        writeU32(52, dfdSize);   // dfdByteLength
-        
-        // KVD
-        const imageDataSize = astcData.byteLength;
-        const kvdOffset = dfdOffset + dfdSize + imageDataSize;
-        writeU32(56, kvdOffset); // kvdByteOffset
-        writeU32(60, 0);         // kvdByteLength
-        
-        // SGD
-        writeU64(64, 0);         // sgdByteOffset
-        writeU64(72, 0);          // sgdByteLength
-        
-        // Create DFD
-        const dfd = new Uint8Array(dfdSize);
-        writeU32(0, dfdSize);
-        writeU32(4, 0);          // vendorId (0 = Khronos)
-        dfd[8] = 0;
-        dfd[9] = 1;             // descriptorType
-        dfd[10] = 0;            // descriptorBlockModel
-        dfd[11] = 6;            // descriptorColorModel (6 = ASTC)
-        dfd[12] = 0;           // descriptorColorPrimaries
-        dfd[13] = 0;           // descriptorTransferFunction
-        dfd[14] = 0;            // flags
-        
-        // texelBlockDimension
-        dfd[15] = ((block.width - 1) << 0) | 
-                   ((block.height - 1) << 2);
-        
-        writeU32(16, 0);         // bytesPlane
-        
-        // Sample info for RGBA (4 samples, 4 bytes each)
-        const samples = [
-            { id: 1, bits: 8 },  // R
-            { id: 2, bits: 8 },  // G
-            { id: 3, bits: 8 },  // B
-            { id: 4, bits: 8 }   // A
-        ];
-        
-        for (let i = 0; i < samples.length; i++) {
-            const offset = 24 + i * 4;
-            dfd[offset] = samples[i].id;
-            dfd[offset + 1] = 0;
-            dfd[offset + 2] = samples[i].bits;
-            dfd[offset + 3] = 0;
-        }
-        
-        // Combine header + DFD + ASTC data
-        const combined = new Uint8Array(headerSize + dfdSize + imageDataSize);
-        combined.set(header, 0);
-        combined.set(dfd, headerSize);
-        combined.set(new Uint8Array(astcData), headerSize + dfdSize);
-        
-        return combined.buffer;
     }
 
     /**

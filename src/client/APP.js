@@ -160,7 +160,7 @@ class APP {
                     if (basisEncoder.isReady()) {
                         console.log('[APP] Using Basis Universal WASM encoder');
                         const result = await basisEncoder.encode(imgData, astcOptions);
-                        astcData = result.ktx2; // KTX2 container with ASTC data
+                        astcData = result.astc; // plain astcenc-format .astc file (see AstcFile.js)
                     } else {
                         // Initialize encoder if needed
                         console.log('[APP] Initializing Basis Universal encoder...');
@@ -168,7 +168,7 @@ class APP {
                         if (ready) {
                             console.log('[APP] Using Basis Universal WASM encoder');
                             const result = await basisEncoder.encode(imgData, astcOptions);
-                            astcData = result.ktx2;
+                            astcData = result.astc;
                         } else {
                             throw new Error('BasisEncoder init failed');
                         }
