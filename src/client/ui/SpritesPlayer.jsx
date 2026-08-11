@@ -603,12 +603,18 @@ class SpritesPlayer extends React.Component {
 
                             <button
                                 onClick={() => {
+                                    // playAnimation()/stopAnimation() already set isPlaying
+                                    // themselves. Toggling it again here stacked a second
+                                    // update onto the same batched React update, landing on
+                                    // the opposite of whatever they had just set - so the
+                                    // button's label/color flipped to the wrong state on
+                                    // every click regardless of whether the timer was
+                                    // actually running.
                                     if (this.animationTimer) {
                                         this.stopAnimation();
                                     } else {
                                         this.playAnimation();
                                     }
-                                    this.setState(prev => ({ isPlaying: !prev.isPlaying }));
                                 }}
                                 style={{
                                     padding: '8px 20px',

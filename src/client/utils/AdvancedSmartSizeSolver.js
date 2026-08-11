@@ -631,7 +631,10 @@ class AdvancedSmartSizeSolver {
         const borderPadding = options.borderPadding || 0;
         const allowRotation = options.allowRotation || false;
         const powerOfTwo = options.powerOfTwo || false;
-        const maxSizeLimit = options.disableMaxLimit ? 8192 : MAX_SIZE_LIMIT;
+        // An explicit cap (used by PackProcessor's multi-atlas mode to force
+        // several compact sheets instead of one large one) wins over the
+        // disableMaxLimit toggle, which only widens the normal single-atlas cap.
+        const maxSizeLimit = options.maxSizeLimit || (options.disableMaxLimit ? 8192 : MAX_SIZE_LIMIT);
         const requestedAlgorithm = options.algorithm || AdvancedSmartSizeSolver.ALGORITHM.BEST;
 
         // map() already yields the index; the previous rects.indexOf(rect) lookup

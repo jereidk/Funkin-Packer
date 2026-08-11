@@ -22,7 +22,8 @@ class SmartSizeSolver {
             allowRotation: options.allowRotation || false,
             disableMaxLimit: options.disableMaxLimit || false,
             powerOfTwo: options.powerOfTwo || false,
-            algorithm: options.algorithm || AdvancedSmartSizeSolver.ALGORITHM.BEST
+            algorithm: options.algorithm || AdvancedSmartSizeSolver.ALGORITHM.BEST,
+            maxSizeLimit: options.maxSizeLimit
         });
     }
 

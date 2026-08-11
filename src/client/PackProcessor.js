@@ -354,7 +354,7 @@ class PackProcessor {
      */
     static calculateOptimalDimensions(rects, options = {}) {
         const mode = options.solverMode || SOLVER_MODE.MANUAL;
-        
+
         if (mode === SOLVER_MODE.MANUAL) {
             return {
                 width: options.width || 512,
@@ -374,6 +374,34 @@ class PackProcessor {
             powerOfTwo: options.powerOfTwo || false,
             algorithm: options.packingAlgorithm || SmartSizeSolver.Advanced.ALGORITHM.BEST
         };
+
+        // Multi-atlas is a distinct concept from auto/scale: those two try to fit
+        // everything on ONE sheet (growing up to the size limit, or shrinking
+        // content as a last resort). Multi-atlas instead deliberately caps each
+        // sheet well below that limit so PackProcessor.pack()'s existing
+        // while-loop spreads the content across several compact sheets on
+        // purpose, rather than only as an emergency fallback when nothing else
+        // fits. Before this branch existed, 'multi-atlas' fell through to the
+        // same single-sheet-sized result as 'auto', so the two modes were
+        // observably identical for any content that fit on one sheet.
+        if (mode === SOLVER_MODE.MULTI_ATLAS) {
+            const singleSheetCap = options.disableMaxLimit ? 8192 : 4096;
+            const perSheetCap = Math.max(1024, Math.floor(singleSheetCap / 2));
+
+            const multi = SmartSizeSolver.calculateOptimalDimensions(rects, {
+                ...solverOptions,
+                maxSizeLimit: perSheetCap
+            });
+
+            return {
+                width: multi.width,
+                height: multi.height,
+                efficiency: multi.efficiency,
+                mode: SOLVER_MODE.MULTI_ATLAS,
+                message: `Multi-atlas: sheets capped at ${perSheetCap}x${perSheetCap} so content spreads across several sheets`,
+                algorithm: multi.algorithm
+            };
+        }
 
         const optimal = SmartSizeSolver.calculateOptimalDimensions(rects, solverOptions);
 
