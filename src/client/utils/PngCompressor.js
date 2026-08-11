@@ -24,6 +24,25 @@ const deflate = buf => pako.deflate(buf, { level: 9 });
 
 // ---------------------------------------------------------------- worker pool
 
+// The bundle ships as a classic <script src="..."> (no output.module: true), so
+// import.meta is not available to build a module-relative worker URL. Capture
+// this script's own src instead - document.currentScript is only valid while
+// the initially loading script is synchronously executing, so this line has to
+// run here, at module top-level, not lazily inside ensureWorker().
+const OWN_SCRIPT_URL = (typeof document !== 'undefined' && document.currentScript)
+    ? document.currentScript.src
+    : null;
+
+function workerUrl() {
+    if (OWN_SCRIPT_URL) {
+        try { return new URL('png-worker.js', OWN_SCRIPT_URL); } catch (e) { /* fall through */ }
+    }
+    // Same relative layout the page's own script tag uses (static/js/*.js),
+    // for the rare case a script is injected without going through a <script>
+    // tag currentScript can see.
+    return 'static/js/png-worker.js';
+}
+
 // Encoding is seconds of tight loops. Run it in a worker so the UI keeps
 // painting, and fall back to the main thread if the worker cannot be created -
 // a bundling or base-path problem then costs responsiveness, not the feature.
@@ -52,8 +71,11 @@ function ensureWorker() {
     if (!workerUsable) return null;
     if (worker) return worker;
 
+    let url;
     try {
-        worker = new Worker(new URL('./png/PngWorker.js', import.meta.url));
+        url = workerUrl();
+        worker = new Worker(url);
+        console.log('[PngCompressor] PNG worker started:', String(url));
 
         worker.onmessage = event => {
             const data = event.data || {};
@@ -71,7 +93,7 @@ function ensureWorker() {
         return worker;
     }
     catch (e) {
-        dropWorker((e && e.message) || String(e));
+        dropWorker(`${(e && e.message) || String(e)} (tried ${String(url)})`);
         return null;
     }
 }

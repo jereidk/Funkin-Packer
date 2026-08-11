@@ -9,6 +9,7 @@ import LocalImagesLoader from "../utils/LocalImagesLoader";
 import ReactDOM from "react-dom";
 import Downloader from "platform/Downloader";
 import ImagesList from "./ImagesList.jsx";
+import PackProperties from "./PackProperties.jsx";
 import { cleanPrefix } from '../utils/common';
 import sparrowStore from '../store/sparrowStore';
 import { getAnimationLinker } from '../utils/AnimationLinker';
@@ -199,9 +200,30 @@ class SheetSplitter extends React.Component {
 
         //Downloader.run(files, this.textureName + '.zip');
 
+        this.applyTextureNameFromSplitter();
+
         Observer.emit(GLOBAL_EVENT.HIDE_SHADER);
         Observer.emit(GLOBAL_EVENT.HIDE_SHEET_SPLITTER); // Close the spritesheet splitter
         Observer.emit(GLOBAL_EVENT.IMAGES_LIST_CHANGED, ImagesList.i.state.images);
+    }
+
+    /**
+     * Repacking replaces the whole working set on the main canvas with this
+     * spritesheet's frames, but the export name (packOptions.textureName) was
+     * never updated to match - it kept whatever "texture" or unrelated name was
+     * there before, so exporting after a repack produced a file named after
+     * nothing the user recognized. Adopt the source sheet's own name, the same
+     * way selectTexture() already seeds its own export/zip name fields.
+     */
+    applyTextureNameFromSplitter() {
+        if (!this.textureName || !PackProperties.i || !PackProperties.i.refs.textureName) return;
+
+        let baseName = this.textureName.replace(/\.[^.]+$/, '');
+        if (!baseName) return;
+
+        let input = ReactDOM.findDOMNode(PackProperties.i.refs.textureName);
+        input.value = baseName;
+        PackProperties.i.onExporterPropChanged();
     }
 
     doExport() {

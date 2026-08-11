@@ -3,15 +3,23 @@ const webpack = require('webpack');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const argv = require('minimist')(process.argv.slice(2));
 
-let entry = [
-    'babel-polyfill',
-    './src/client/index'
-];
+// Two named entries so the PNG worker compiles as its own standalone bundle.
+// It is loaded at runtime via `new Worker('static/js/png-worker.js')` - a plain
+// relative URL, not `new Worker(new URL(..., import.meta.url))` - because the
+// app ships as a classic <script src="..."> (no output.module: true), and
+// import.meta is only valid inside a real ES module.
+let entry = {
+    index: [
+        'babel-polyfill',
+        './src/client/index'
+    ],
+    'png-worker': './src/client/utils/png/PngWorker.js'
+};
 
 let plugins = [];
 
 let devtool = 'eval-source-map';
-let output = 'static/js/index.js';
+let outputDir = '';
 let debug = true;
 
 // Detect production mode: NODE_ENV=production or --mode production or --prod flag
@@ -29,8 +37,6 @@ plugins.push(new webpack.DefinePlugin({
 }));
 
 if (prod) {
-    let outputDir;
-
     if (PLATFORM === 'web') {
         outputDir = 'web/';
     }
@@ -44,11 +50,10 @@ if (prod) {
     ]));
 
     devtool = false;
-    output = outputDir + 'static/js/index.js';
     debug = false;
 }
 else {
-    entry.push('webpack-dev-server/client?http://localhost:4000');
+    entry.index.push('webpack-dev-server/client?http://localhost:4000');
     plugins.push(new CopyWebpackPlugin([
         {from: 'src/client/resources', to: './'}
     ]));
@@ -58,7 +63,7 @@ let config = {
     entry: entry,
     output: {
         path: __dirname + "/dist",
-        filename: output
+        filename: outputDir + 'static/js/[name].js'
     },
     devServer: {
         static: './dist',

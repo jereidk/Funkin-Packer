@@ -1,5 +1,6 @@
-import Packer from "./Packer";
-import Rect from "../math/Rect";
+// Extensions are explicit so this module also loads under plain node for the tests
+import Packer from "./Packer.js";
+import Rect from "../math/Rect.js";
 
 const METHOD = {
     BestShortSideFit: "BestShortSideFit",
@@ -331,7 +332,16 @@ class MaxRectsBin extends Packer {
                     bestNode.width = width;
                     bestNode.height = height;
                     bestShortSideFit.value = shortSideFit;
-                    bestAreaFit = areaFit;
+                    // Was `bestAreaFit = areaFit`, which rebinds the local parameter to a
+                    // plain number instead of writing through it. That detaches it from the
+                    // {value} box the caller passed in (score1 in _scoreRectangle), so the
+                    // caller never sees this candidate's score - it stays at the initial
+                    // Infinity regardless of how good the match was. insert2() then ranks
+                    // every BestAreaFit candidate by its short-side tiebreak alone, so the
+                    // method silently ran as a duplicate of BestShortSideFit. The rotated
+                    // branch just below already does this assignment correctly; this makes
+                    // the two consistent.
+                    bestAreaFit.value = areaFit;
                 }
             }
 
@@ -397,7 +407,13 @@ class MaxRectsBin extends Packer {
                     bestNode.y = rect.y;
                     bestNode.width = width;
                     bestNode.height = height;
-                    bestContactScore = score;
+                    // Same class of bug as BestAreaFit above: rebinding the parameter
+                    // instead of writing through it detached this from the caller's
+                    // {value} box, so score1 in _scoreRectangle never moved off its
+                    // initial -1 sentinel. After the `score1.value = -score1.value`
+                    // negation there, every candidate scored a constant +1, so
+                    // ContactPointRule degenerated into first-fit ordering.
+                    bestContactScore.value = score;
                 }
             }
             if (this.allowRotate && rect.width >= height && rect.height >= width) {
@@ -454,17 +470,27 @@ class MaxRectsBin extends Packer {
     }
 
     _pruneFreeList() {
+        // Iterate both indices backward so a splice never shifts an index still to
+        // be visited. The forward version used to `break` after `splice(i, 1)` and
+        // then let the outer loop's `i++` run, which skips checking whatever just
+        // slid into slot i; and splicing `j` mid-forward-scan skipped the item that
+        // slid into slot j the same way. Neither ever placed a rect wrongly (a
+        // stray un-pruned free rect can only ever be redundant, not incorrect),
+        // but let stale, fully-contained free rects survive and get scored as
+        // insertion candidates on every subsequent sprite - the array can only
+        // grow every insert, so this compounds across a large sheet.
         let freeRectangles = this.freeRectangles;
-        for(let i = 0;i < freeRectangles.length; i++)
-            for(let j= i+1; j < freeRectangles.length; j++) {
+        for(let i = freeRectangles.length - 1; i >= 0; i--) {
+            for(let j = freeRectangles.length - 1; j > i; j--) {
                 if (Rect.hitTest(freeRectangles[i], freeRectangles[j])) {
                     freeRectangles.splice(i,1);
                     break;
                 }
-                if (Rect.hitTest(freeRectangles[j], freeRectangles[i])) {
+                else if (Rect.hitTest(freeRectangles[j], freeRectangles[i])) {
                     freeRectangles.splice(j,1);
                 }
             }
+        }
     }
 
     static get type() {

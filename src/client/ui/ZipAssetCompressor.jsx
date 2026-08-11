@@ -210,6 +210,13 @@ class ZipAssetCompressor extends React.Component {
             this.setState({ progress: Math.round((i / totalFiles) * 100), currentFile: fileName });
             this.logDebug('Processing', { file: fileName, type: fileType, size: zipEntry._data?.uncompressedSize });
 
+            // setState alone does not force a paint, and every await below can
+            // resolve purely through microtasks (JSZip's decompression included) -
+            // without a real task-queue yield the browser never gets a rendering
+            // opportunity between files, so the progress bar never moves and the
+            // tab reads as hung even though the loop is technically async.
+            await new Promise(resolve => setTimeout(resolve, 0));
+
             try {
                 const originalData = await zipEntry.async('uint8array');
                 const originalSize = originalData.length;
