@@ -142,18 +142,6 @@ class PackProcessor {
 
             let name = key.split(".")[0];
 
-            maxWidth += img.width;
-            maxHeight += img.height;
-
-            // Compare padded against padded. Testing the raw width against an already
-            // padded running maximum understates the minimum, letting a sheet through
-            // that the widest sprite cannot actually fit into.
-            let paddedW = img.width + spritePadding * 2;
-            let paddedH = img.height + spritePadding * 2;
-
-            if (paddedW > minWidth) minWidth = paddedW;
-            if (paddedH > minHeight) minHeight = paddedH;
-
             rects.push({
                 frame: { x: 0, y: 0, w: img.width, h: img.height },
                 rotated: false,
@@ -164,6 +152,37 @@ class PackProcessor {
                 file: key,
                 image: img
             });
+        }
+
+        // Trim and de-duplicate BEFORE sizing the sheet. Both steps change what is
+        // actually packed - Trimmer rewrites frame.w/h in place and detectIdentical
+        // removes rects entirely - so running the solver first sized the atlas for
+        // sprites that no longer exist at that size, or at all.
+        if (options.allowTrim) {
+            Trimmer.trim(rects, alphaThreshold);
+        }
+
+        let identical = [];
+
+        if (options.detectIdentical) {
+            let res = PackProcessor.detectIdentical(rects, options.allowTrim);
+
+            rects = res.rects;
+            identical = res.identical;
+        }
+
+        for (let rect of rects) {
+            maxWidth += rect.frame.w;
+            maxHeight += rect.frame.h;
+
+            // Compare padded against padded. Testing the raw width against an already
+            // padded running maximum understates the minimum, letting a sheet through
+            // that the widest sprite cannot actually fit into.
+            let paddedW = rect.frame.w + spritePadding * 2;
+            let paddedH = rect.frame.h + spritePadding * 2;
+
+            if (paddedW > minWidth) minWidth = paddedW;
+            if (paddedH > minHeight) minHeight = paddedH;
         }
 
         minWidth += borderPadding * 2;
@@ -221,19 +240,6 @@ class PackProcessor {
                 description: I18.f("INVALID_SIZE_ERROR", minWidth, minHeight)
             });
             return;
-        }
-
-        if (options.allowTrim) {
-            Trimmer.trim(rects, alphaThreshold);
-        }
-
-        let identical = [];
-
-        if (options.detectIdentical) {
-            let res = PackProcessor.detectIdentical(rects, options.allowTrim);
-
-            rects = res.rects;
-            identical = res.identical;
         }
 
         let getAllPackers = () => {
