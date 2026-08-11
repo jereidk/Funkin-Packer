@@ -1,6 +1,5 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
-import {GLOBAL_EVENT, Observer} from "../Observer";
 import {cleanPrefix, smartSortImages} from '../utils/common';
 import sparrowStore from '../store/sparrowStore';
 
@@ -25,7 +24,6 @@ class SpritesPlayer extends React.Component {
         this.currentTextures = [];
         this.width = 0;
         this.height = 0;
-        this.selectedImages = [];
         this.animationTimer = null;
         this.lastPropsData = null;
 
@@ -45,40 +43,35 @@ class SpritesPlayer extends React.Component {
         this.nextFrame = this.nextFrame.bind(this);
         this.prevFrame = this.prevFrame.bind(this);
         this.renderCurrentFrame = this.renderCurrentFrame.bind(this);
-
-        Observer.on(GLOBAL_EVENT.IMAGES_LIST_SELECTED_CHANGED, this.onImagesSelected, this);
     }
 
     /**
      * Calculate animation groups based on sprite prefixes
      * Groups sprites by their cleanPrefix() name
+     *
+     * Deliberately includes every packed texture, not just ones matching the
+     * left-panel image tree's selection. That selection is shared app-wide
+     * (it also drives highlighting on the atlas view) and driving this
+     * player's content from it made the player go blank from an unrelated,
+     * often incidental single click in the tree - e.g. clicking a frame to
+     * inspect it left only that one frame (or zero, if the tree's file key
+     * didn't exactly match) visible here. The player already has its own
+     * dedicated way to narrow what's shown: the per-animation group buttons
+     * below, driven by selectGroup().
      */
     calculateGroups() {
         const groups = {};
 
-        // Mirrors TextureView's semantics: an empty selection means "nothing
-        // filtered out", not "nothing to show". Without this, opening the
-        // player with no explicit tree selection (the common case right
-        // after packing) produced an empty viewer with zero frames.
-        const hasSelection = this.selectedImages.length > 0;
-
         for (let i = 0; i < this.textures.length; i++) {
             const tex = this.textures[i];
-            // Check if this texture is in selectedImages
-            const isSelected = !hasSelection || (!tex.config.cloned
-                ? this.selectedImages.indexOf(tex.config.file) >= 0
-                : this.selectedImages.indexOf(tex.config.originalFile) >= 0);
-
-            if (!isSelected) continue;
-
             const prefix = cleanPrefix(tex.config.originalFile || tex.config.file || tex.config.name);
-            
+
             if (!groups[prefix]) {
                 groups[prefix] = [];
             }
             groups[prefix].push(i);
         }
-        
+
         // Sort groups and their members
         for (const groupName in groups) {
             groups[groupName].sort((a, b) => {
@@ -88,7 +81,7 @@ class SpritesPlayer extends React.Component {
                 );
             });
         }
-        
+
         return groups;
     }
 
@@ -99,14 +92,6 @@ class SpritesPlayer extends React.Component {
         this.setState({ selectedGroup: groupName }, () => {
             this.updateCurrentTextures();
         });
-    }
-
-    onImagesSelected(list=[]) {
-        this.selectedImages = list;
-        // Recalculate groups when selection changes
-        const groups = this.calculateGroups();
-        this.setState({ groupedAnimations: groups });
-        this.updateCurrentTextures();
     }
 
     componentDidMount() {
