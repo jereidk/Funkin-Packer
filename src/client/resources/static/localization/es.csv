@@ -137,6 +137,7 @@ SPLIT;Desembalaje
 SELECT_TEXTURE;Textura
 SELECT_DATA_FILE;Datos
 SPLITTER;Desembalaje atlas
+ANIMATE_PREVIEW;Reanimar
 SPLITTER_ERROR_NO_FRAMES;No se ha encontrado ningún sprite. Quizás el formato del atlas sea incorrecto.
 DISABLE_UNTRIM;Mantener corte:
 REPACK;Repack

@@ -1109,6 +1109,16 @@ html, body {
     margin-right: 300px;
 }
 
+.animation-preview-content {
+    width: 820px;
+    height: 560px;
+}
+
+.animation-preview-content .file-upload {
+    font-size: 12px;
+    min-width: 110px;
+}
+
 /* AnimationTreeView styles */
 .anim-tree-container {
     background: #1a2a3a;

@@ -11,6 +11,7 @@ import OldBrowserBlocker from './OldBrowserBlocker.jsx';
 import Updater from './Updater.jsx';
 import EditCustomExporter from './EditCustomExporter.jsx';
 import SheetSplitter from './SheetSplitter.jsx';
+import AnimationPreviewTool from './AnimationPreviewTool.jsx';
 import MusicPlayer from './MusicPlayer.jsx';
 import ASTCConverter from './ASTCConverter.jsx';
 import PngCompressorPanel from './PngCompressorPanel.jsx';
@@ -30,7 +31,8 @@ class MainLayout extends React.Component {
             //about: false,
             editCustomExporter: false,
             updater: false,
-            sheetSplitter: false
+            sheetSplitter: false,
+            animationPreview: false
         };
 
         this.closeMessage = this.closeMessage.bind(this);
@@ -46,6 +48,8 @@ class MainLayout extends React.Component {
         Observer.on(GLOBAL_EVENT.HIDE_UPDATER, this.hideUpdater, this);
         Observer.on(GLOBAL_EVENT.SHOW_SHEET_SPLITTER, this.showSheetSplitter, this);
         Observer.on(GLOBAL_EVENT.HIDE_SHEET_SPLITTER, this.hideSheetSplitter, this);
+        Observer.on(GLOBAL_EVENT.SHOW_ANIMATION_PREVIEW, this.showAnimationPreview, this);
+        Observer.on(GLOBAL_EVENT.HIDE_ANIMATION_PREVIEW, this.hideAnimationPreview, this);
     }
 
     onUpdateAvailable(info) {
@@ -99,12 +103,21 @@ class MainLayout extends React.Component {
         this.setState({sheetSplitter: false});
     }
 
+    showAnimationPreview() {
+        this.setState({animationPreview: true});
+    }
+
+    hideAnimationPreview() {
+        this.setState({animationPreview: false});
+    }
+
     render() {
         let shader = this.state.shader ? (<ProcessingShader/>) : null;
         //let about = this.state.about ? (<About/>) : null;
         let editCustomExporter = this.state.editCustomExporter ? (<EditCustomExporter/>) : null;
         let updater = this.state.updater ? (<Updater data={this.state.updater}/>) : null;
         let sheetSplitter = this.state.sheetSplitter ? (<SheetSplitter/>) : null;
+        let animationPreview = this.state.animationPreview ? (<AnimationPreviewTool/>) : null;
 
         return (
 
@@ -126,6 +139,7 @@ class MainLayout extends React.Component {
                     <ErrorBoundary name="Ventanas">
                         {editCustomExporter}
                         {sheetSplitter}
+                        {animationPreview}
                         {updater}
                         {this.state.messageBox}
                     </ErrorBoundary>

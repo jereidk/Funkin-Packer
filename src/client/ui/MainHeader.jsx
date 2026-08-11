@@ -45,6 +45,10 @@ class MainHeader extends React.Component {
         Observer.emit(GLOBAL_EVENT.SHOW_SHEET_SPLITTER);
     }
 
+    showAnimationPreview() {
+        Observer.emit(GLOBAL_EVENT.SHOW_ANIMATION_PREVIEW);
+    }
+
     render() {
         return (
             <div className="main-header back-900 color-white">
@@ -89,6 +93,7 @@ class MainHeader extends React.Component {
 
                 <div className="main-header-controls">
                     <div className="btn back-700 border-color-gray color-white" onClick={this.showSplitter}>{I18.f("SPLITTER")}</div>
+                    <div className="btn back-700 border-color-gray color-white" onClick={this.showAnimationPreview}>{I18.f("ANIMATE_PREVIEW")}</div>
                 </div>
                 
                 {/* Version info badge - click for commit history */}

@@ -137,6 +137,7 @@ SPLIT;Split
 SELECT_TEXTURE;Texture
 SELECT_DATA_FILE;Data file
 SPLITTER;Repack / Split sheet
+ANIMATE_PREVIEW;Reanimate
 SPLITTER_ERROR_NO_FRAMES;Sprites not found. Probably, atlas format is incorrect.
 DISABLE_UNTRIM;Disable Untrimming:
 REPACK;Repack
