@@ -41,6 +41,32 @@ class MaxRectsPacker extends Packer {
 
         packer.addArray(input);
 
+        // maxrects-packer is itself a multi-bin packer: when the given items don't
+        // all fit in one binWidth x binHeight container, it opens additional bins
+        // internally rather than failing. Only bin[0] is read here because
+        // PackProcessor.pack()'s while loop already owns the multi-sheet decision
+        // one call = one sheet, with coordinates relative to that sheet's own
+        // (0,0). Concatenating bins[1+] here would mix in coordinates from a
+        // SEPARATE (0,0)-origin bin as if they belonged to this same sheet,
+        // overlapping whatever is already placed at those coordinates.
+        //
+        // This is not silent data loss: any item that landed in bins[1+] is
+        // simply absent from the result below, so PackProcessor's
+        // `for (item of result) removeRect(...)` never removes it from the
+        // pending queue, and the outer while loop retries it on the next sheet.
+        // It does mean the fresh single-bin repack of that leftover batch can
+        // land differently than the library's own multi-bin solution already
+        // had - wasting that already-computed placement and potentially costing
+        // an extra sheet. Only reachable for MaxRectsPacker's own combos (one of
+        // several methods tried by "Optimal" mode) with sprite counts small
+        // enough that the ensemble still tries it (see PackProcessor's
+        // LARGE_ENSEMBLE_THRESHOLD) but whose combined size still doesn't fit
+        // one sheet at the size being tried - narrow, but real.
+        if (packer.bins.length > 1) {
+            console.warn(`[MaxRectsPacker] maxrects-packer split into ${packer.bins.length} bins; ` +
+                `only the first is used here, the rest are retried on the next sheet`);
+        }
+
         let bin = packer.bins[0];
         let rects = bin.rects;
 
