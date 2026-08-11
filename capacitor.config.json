@@ -1,6 +1,6 @@
 {
   "appId": "com.funkinpacker.app",
-  "appName": "Funkin Packer",
+  "appName": "Washos Packer",
   "webDir": "dist/android",
   "android": {
     "backgroundColor": "#1a1a2e",

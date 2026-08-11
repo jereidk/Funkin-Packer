@@ -340,13 +340,15 @@ class ASTCConverter extends React.Component {
                                 {/* ⚠️ IMPORTANT WARNING */}
                                 <div style={{
                                     ...styles.resultInfo,
-                                    borderLeft: '4px solid #f39c12',
-                                    backgroundColor: '#fff3cd',
+                                    borderLeft: '4px solid var(--warning-color)',
+                                    // A pale-yellow callout on #856404 text was a bright
+                                    // patch in dark mode; tint the warning instead.
+                                    backgroundColor: 'rgba(255, 152, 0, 0.15)',
                                     padding: '10px',
                                     marginBottom: '10px',
                                     borderRadius: '4px'
                                 }}>
-                                    <p style={{margin: 0, color: '#856404', fontSize: '11px'}}>
+                                    <p style={{margin: 0, color: 'var(--text-primary)', fontSize: '11px'}}>
                                         ⚠️ <strong>EXPERIMENTAL:</strong> Este encoder ASTC es una 
                                         implementación de referencia, <strong>NO produce archivos ASTC 
                                         válidos para uso en producción</strong>. Para producción, se 

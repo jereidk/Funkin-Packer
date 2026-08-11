@@ -1,6 +1,6 @@
 {
-  "name": "funky-packer",
-  "displayName": "FunkyPacker",
+  "name": "washos-packer",
+  "displayName": "Washos Packer",
   "version": "1.0.0",
   "description": "Smart texture packer for Friday Night Funkin' modding with automatic atlas optimization",
   "url": "https://jereidk.github.io/FunkyPacker/",

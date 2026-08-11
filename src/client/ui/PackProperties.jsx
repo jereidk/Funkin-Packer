@@ -459,7 +459,7 @@ class PackProperties extends React.Component {
 
                             <tr title="Smart Size Solver Mode" style={{backgroundColor: '#2a2a3a'}}>
                                 <td colSpan="3" className="center-align" style={{padding: '8px 0'}}>
-                                    <strong>FunkyPacker Smart Size</strong>
+                                    <strong>Washos Packer Smart Size</strong>
                                 </td>
                             </tr>
                             <tr title="Solver Mode">

@@ -1,10 +1,10 @@
-# FunkyPacker
+# Washos Packer
 
 **Smart Texture Packer for Friday Night Funkin' Modding**
 
 ![logo](https://raw.githubusercontent.com/odrick/free-tex-packer/master/electron/build/icons/96x96.png)
 
-FunkyPacker es una herramienta web de empaquetado de texturas inteligente, diseñada específicamente para el modding de Friday Night Funkin'. Basado en [Funkin-Packer](https://github.com/NeeEoo/Funkin-Packer) con características avanzadas de optimización automática.
+Washos Packer es una herramienta web de empaquetado de texturas inteligente, diseñada específicamente para el modding de Friday Night Funkin'. Basado en [Funkin-Packer](https://github.com/NeeEoo/Funkin-Packer) con características avanzadas de optimización automática.
 
 ## 🎯 Características Principales
 
@@ -131,4 +131,4 @@ MIT License - Ver [LICENSE.md](./LICENSE.md)
 
 ---
 
-**FunkyPacker** - Smart packing for FNF modding 🎵
+**Washos Packer** - Smart packing for FNF modding 🎵

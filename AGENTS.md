@@ -1,4 +1,4 @@
-# FunkyPacker Agent Guidelines
+# Washos Packer Agent Guidelines
 
 ## Code Verification Pattern
 

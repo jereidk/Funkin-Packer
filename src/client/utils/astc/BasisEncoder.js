@@ -1,5 +1,5 @@
 /**
- * BasisEncoder - Real Basis Universal WebAssembly encoder for FunkyPacker
+ * BasisEncoder - Real Basis Universal WebAssembly encoder for Washos Packer
  * 
  * Uses the official pre-built Basis Universal encoder from BinomialLLC/basis_universal
  * (webgl/encoder/build/) which provides genuine texture compression.

@@ -1,6 +1,6 @@
-# Funkin Packer - Android APK
+# Washos Packer - Android APK
 
-Guía completa para compilar Funkin Packer como aplicación Android usando Capacitor.
+Guía completa para compilar Washos Packer como aplicación Android usando Capacitor.
 
 ## 🚀 Compilación Rápida
 
@@ -12,8 +12,8 @@ Guía completa para compilar Funkin Packer como aplicación Android usando Capac
 
 ### Opción 2: Línea de comandos
 ```bash
-git clone https://github.com/jereidk/Funkin-Packer.git
-cd Funkin-Packer
+git clone https://github.com/jereidk/FunkyPacker.git
+cd FunkyPacker
 npm install
 npm run build-apk
 ```

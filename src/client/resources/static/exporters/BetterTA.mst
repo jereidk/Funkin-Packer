@@ -7,7 +7,7 @@
     ]
   },
   "meta":{
-    "app":"FunkyPacker",
+    "app":"Washos Packer",
     "version":"{{{appInfo.version}}}",
     "image":"{{{config.imageFile}}}",
     "format":"{{config.format}}",
