@@ -55,16 +55,22 @@ class SpritesPlayer extends React.Component {
      */
     calculateGroups() {
         const groups = {};
-        
+
+        // Mirrors TextureView's semantics: an empty selection means "nothing
+        // filtered out", not "nothing to show". Without this, opening the
+        // player with no explicit tree selection (the common case right
+        // after packing) produced an empty viewer with zero frames.
+        const hasSelection = this.selectedImages.length > 0;
+
         for (let i = 0; i < this.textures.length; i++) {
             const tex = this.textures[i];
             // Check if this texture is in selectedImages
-            const isSelected = !tex.config.cloned 
+            const isSelected = !hasSelection || (!tex.config.cloned
                 ? this.selectedImages.indexOf(tex.config.file) >= 0
-                : this.selectedImages.indexOf(tex.config.originalFile) >= 0;
-            
+                : this.selectedImages.indexOf(tex.config.originalFile) >= 0);
+
             if (!isSelected) continue;
-            
+
             const prefix = cleanPrefix(tex.config.originalFile || tex.config.file || tex.config.name);
             
             if (!groups[prefix]) {
@@ -427,18 +433,21 @@ class SpritesPlayer extends React.Component {
     }
 
     goToLastFrame() {
+        if (!this.currentTextures.length) return;
         const lastFrame = this.currentTextures.length - 1;
         this.setState({ currentFrame: lastFrame });
         this.renderCurrentFrame();
     }
 
     nextFrame() {
+        if (!this.currentTextures.length) return;
         const next = (this.state.currentFrame + 1) % this.currentTextures.length;
         this.setState({ currentFrame: next });
         this.renderCurrentFrame();
     }
 
     prevFrame() {
+        if (!this.currentTextures.length) return;
         const prev = (this.state.currentFrame - 1 + this.currentTextures.length) % this.currentTextures.length;
         this.setState({ currentFrame: prev });
         this.renderCurrentFrame();
