@@ -96,11 +96,24 @@ class AnimationLinker {
             this.spriteReferences.get(name).push({path, type: 'SN'});
         }
 
-        // Recursively check arrays
+        // Recursively check arrays. Must return here - `for...in` below also
+        // enumerates an array's numeric indices as string keys ("0", "1", ...),
+        // so without this every array element was walked TWICE: once here,
+        // once again by the generic object loop. That doubling compounds at
+        // every nested array level below it (Animation.json nests arrays
+        // Layers -> Frames -> Elements three deep), so a single real
+        // reference three array-levels down was recorded 2*2*2 = 8 times.
+        // getReferencedSprites()/getReferencedSymbols() looked unaffected
+        // (they only check whether a name has ANY reference, not how many),
+        // but getSymbolReferenceCounts() - the "used Nx" number
+        // AnimationTreeView shows next to every symbol - was wrong for any
+        // reference nested inside one or more arrays, which in practice is
+        // all of them.
         if (Array.isArray(node)) {
             for (let i = 0; i < node.length; i++) {
                 this.walkForSpriteReferences(node[i], `${path}[${i}]`);
             }
+            return;
         }
 
         // Recursively check objects
