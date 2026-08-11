@@ -145,9 +145,14 @@ class PackProcessor {
             maxWidth += img.width;
             maxHeight += img.height;
 
-            // This is probably wrong
-            if (img.width > minWidth) minWidth = img.width + spritePadding * 2;// + borderPadding * 2;
-            if (img.height > minHeight) minHeight = img.height + spritePadding * 2;// + borderPadding * 2;
+            // Compare padded against padded. Testing the raw width against an already
+            // padded running maximum understates the minimum, letting a sheet through
+            // that the widest sprite cannot actually fit into.
+            let paddedW = img.width + spritePadding * 2;
+            let paddedH = img.height + spritePadding * 2;
+
+            if (paddedW > minWidth) minWidth = paddedW;
+            if (paddedH > minHeight) minHeight = paddedH;
 
             rects.push({
                 frame: { x: 0, y: 0, w: img.width, h: img.height },
@@ -180,7 +185,10 @@ class PackProcessor {
                 borderPadding: borderPadding,
                 allowRotation: options.allowRotation || false,
                 disableMaxLimit: options.disableMaxLimit || false,
-                packingAlgorithm: options.packingAlgorithm || 'best'
+                packingAlgorithm: options.packingAlgorithm || 'best',
+                // Let the solver aim at the size it will actually be rounded to below,
+                // instead of optimizing a width that then gets rounded up anyway.
+                powerOfTwo: options.powerOfTwo || false
             });
             
             width = solverResult.width;
@@ -284,6 +292,15 @@ class PackProcessor {
                 let packer = new combo.packerClass(width, height, combo.allowRotation, spritePadding);
                 let result = packer.pack(_rects, combo.packerMethod);
 
+                // A sheet that fits nothing removes nothing from _rects, so the loop
+                // would spin forever and hang the tab. Fail with the size error instead.
+                if (!result || !result.length) {
+                    if (onError) onError({
+                        description: I18.f("INVALID_SIZE_ERROR", minWidth, minHeight)
+                    });
+                    return;
+                }
+
                 if (options.detectIdentical) {
                     result = PackProcessor.applyIdentical(result, _identical);
                 }
@@ -355,6 +372,7 @@ class PackProcessor {
             borderPadding: options.borderPadding || 0,
             allowRotation: options.allowRotation || false,
             disableMaxLimit: options.disableMaxLimit || false,
+            powerOfTwo: options.powerOfTwo || false,
             algorithm: options.packingAlgorithm || SmartSizeSolver.Advanced.ALGORITHM.BEST
         };
 

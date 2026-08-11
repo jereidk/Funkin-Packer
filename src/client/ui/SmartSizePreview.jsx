@@ -73,7 +73,10 @@ class SmartSizePreview extends React.Component {
             borderPadding: options.borderPadding || 0,
             allowRotation: options.allowRotation || false,
             disableMaxLimit: options.disableMaxLimit || false,
-            packingAlgorithm: options.packingAlgorithm || 'best'
+            packingAlgorithm: options.packingAlgorithm || 'best',
+            // Must match what the real pack does, or the preview shows a size the
+            // export will not produce.
+            powerOfTwo: options.powerOfTwo || false
         });
 
         this.setState({

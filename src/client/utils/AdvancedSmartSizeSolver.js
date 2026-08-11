@@ -2,9 +2,21 @@
  * AdvancedSmartSizeSolver - Multi-algorithm bin packing for optimal atlas dimensions
  * Implements: MaxRects variants, Guillotine, Shelf, Skyline algorithms
  * Selects the best packing based on efficiency and atlas dimensions
+ *
+ * Coordinate convention used throughout this file:
+ *  - A packer is constructed with the INNER bin size (atlas size minus borderPadding
+ *    on both sides) and works entirely in inner coordinates.
+ *  - `padding` is the per-sprite gap. A packer reserves `padding` on every side of a
+ *    sprite (so neighbours end up `padding * 2` apart) and returns the sprite rect,
+ *    not the padded box.
+ *  - insert() returns null when the sprite does not fit. Every packer must honour
+ *    this; a packer that always succeeds makes the solver report impossible sizes.
  */
 
 const MAX_SIZE_LIMIT = 4096;
+
+// How many times GuillotinePacker re-scans its free list looking for merges.
+const MERGE_PASSES = 2;
 
 // ============================================
 // MAXRECTS PACKER - All Variants
@@ -16,48 +28,63 @@ class MaxRectsPacker {
         this.padding = padding;
         this.freeRects = [{ x: 0, y: 0, w: width, h: height }];
         this.usedRects = [];
+        this.spriteArea = 0;
     }
 
     clone() {
         const copy = new MaxRectsPacker(this.binWidth, this.binHeight, this.padding);
         copy.freeRects = this.freeRects.map(r => ({ ...r }));
         copy.usedRects = this.usedRects.map(r => ({ ...r }));
+        copy.spriteArea = this.spriteArea;
         return copy;
     }
 
-    insert(width, height, method = 'BestShortSideFit') {
+    insert(width, height, method = 'BestShortSideFit', allowRotation = false) {
+        // Reserve the sprite gap on every side; the packer places padded boxes and
+        // reports the sprite rect inset back out of it.
+        const paddedW = width + this.padding * 2;
+        const paddedH = height + this.padding * 2;
+
         let bestRect = null;
         let bestScore = { score1: Infinity, score2: Infinity };
 
         for (let i = 0; i < this.freeRects.length; i++) {
             const free = this.freeRects[i];
 
-            if (free.w >= width && free.h >= height) {
-                const result = this.scoreRect(free, width, height, method, false);
+            if (free.w >= paddedW && free.h >= paddedH) {
+                const result = this.scoreRect(free, paddedW, paddedH, method);
                 if (this.isBetter(result, bestScore)) {
                     bestScore = result;
-                    bestRect = { x: free.x, y: free.y, w: width, h: height, index: i, rotated: false };
+                    bestRect = { x: free.x, y: free.y, w: paddedW, h: paddedH, rotated: false };
                 }
             }
 
-            // Try rotation
-            if (free.w >= height && free.h >= width) {
-                const result = this.scoreRect(free, height, width, method, true);
+            // Try rotation only when the caller allows it - the packer must model the
+            // same constraints as the real packer or the size estimate is meaningless.
+            if (allowRotation && paddedW !== paddedH && free.w >= paddedH && free.h >= paddedW) {
+                const result = this.scoreRect(free, paddedH, paddedW, method);
                 if (this.isBetter(result, bestScore)) {
                     bestScore = result;
-                    bestRect = { x: free.x, y: free.y, w: height, h: width, index: i, rotated: true };
+                    bestRect = { x: free.x, y: free.y, w: paddedH, h: paddedW, rotated: true };
                 }
             }
         }
 
-        if (bestRect) {
-            this.placeRect(bestRect);
-            return bestRect;
-        }
-        return null;
+        if (!bestRect) return null;
+
+        this.placeRect(bestRect);
+        this.spriteArea += width * height;
+
+        return {
+            x: bestRect.x + this.padding,
+            y: bestRect.y + this.padding,
+            w: bestRect.rotated ? height : width,
+            h: bestRect.rotated ? width : height,
+            rotated: bestRect.rotated
+        };
     }
 
-    scoreRect(free, width, height, method, rotated) {
+    scoreRect(free, width, height, method) {
         const leftoverH = free.w - width;
         const leftoverV = free.h - height;
         const shortSide = Math.min(leftoverH, leftoverV);
@@ -74,7 +101,8 @@ class MaxRectsPacker {
             case 'BottomLeftRule':
                 return { score1: free.y + height, score2: free.x };
             case 'ContactPoint':
-                return { score1: this.contactScore(free.x, free.y, width, height), score2: 0 };
+                // higher contact is better, so negate to keep "lower score wins"
+                return { score1: -this.contactScore(free.x, free.y, width, height), score2: free.y };
             default:
                 return { score1: shortSide, score2: longSide };
         }
@@ -90,7 +118,7 @@ class MaxRectsPacker {
         let score = 0;
         if (x === 0 || x + width === this.binWidth) score += height;
         if (y === 0 || y + height === this.binHeight) score += width;
-        
+
         for (const rect of this.usedRects) {
             if (rect.x === x + width || rect.x + rect.w === x)
                 score += this.intervalOverlap(rect.y, rect.y + rect.h, y, y + height);
@@ -106,101 +134,76 @@ class MaxRectsPacker {
     }
 
     placeRect(rect) {
-        // The placed rectangle's bounding box
-        const pr = {
-            x: rect.x,
-            y: rect.y,
-            w: rect.w,
-            h: rect.h
-        };
-        const prRight = pr.x + pr.w;
-        const prBottom = pr.y + pr.h;
+        const prRight = rect.x + rect.w;
+        const prBottom = rect.y + rect.h;
 
-        // IMPORTANT: According to MaxRects algorithm (Jukka Jylänki),
-        // we must split ALL free rects that intersect with the placed rectangle,
-        // including the one we used for placement.
-        // DO NOT remove the used free rect before the split loop!
-        // The split loop will naturally exclude the used rect's original area
-        // by generating splits only for non-overlapping parts.
-        
-        const newFreeRects = [];
+        // Split every free rect that intersects the placed rect, including the one
+        // chosen for placement. The overlapping area is simply never re-emitted.
+        //
+        // Rects that did NOT intersect are carried over untouched. They were already
+        // mutually non-contained, so only the freshly created ones need pruning -
+        // sweeping the whole list every insert made this O(f^2) per sprite and
+        // dominated the solver's runtime (641ms for a single 1000-sprite pack).
+        const kept = [];
+        const created = [];
 
         for (const free of this.freeRects) {
             const frRight = free.x + free.w;
             const frBottom = free.y + free.h;
 
-            // Check if this free rect intersects with the placed rect
-            if (pr.x >= frRight || prRight <= free.x ||
-                pr.y >= frBottom || prBottom <= free.y) {
-                // No intersection - keep this free rect as-is
-                newFreeRects.push(free);
+            if (rect.x >= frRight || prRight <= free.x ||
+                rect.y >= frBottom || prBottom <= free.y) {
+                kept.push(free);
                 continue;
             }
 
-            // There IS an intersection - split this free rect against the placed rect
-            // This creates up to 4 new free rects (like Guillotine)
-            // The overlapping part is simply not included in any split
-            
-            // Split LEFT: area to the left of placed rect
-            if (free.x < pr.x) {
-                newFreeRects.push({
-                    x: free.x,
-                    y: free.y,
-                    w: pr.x - free.x,
-                    h: free.h
-                });
+            if (free.x < rect.x) {
+                created.push({ x: free.x, y: free.y, w: rect.x - free.x, h: free.h });
             }
-
-            // Split RIGHT: area to the right of placed rect
             if (frRight > prRight) {
-                newFreeRects.push({
-                    x: prRight,
-                    y: free.y,
-                    w: frRight - prRight,
-                    h: free.h
-                });
+                created.push({ x: prRight, y: free.y, w: frRight - prRight, h: free.h });
             }
-
-            // Split TOP: area above placed rect
-            if (free.y < pr.y) {
-                newFreeRects.push({
-                    x: free.x,
-                    y: free.y,
-                    w: free.w,
-                    h: pr.y - free.y
-                });
+            if (free.y < rect.y) {
+                created.push({ x: free.x, y: free.y, w: free.w, h: rect.y - free.y });
             }
-
-            // Split BOTTOM: area below placed rect
             if (frBottom > prBottom) {
-                newFreeRects.push({
-                    x: free.x,
-                    y: prBottom,
-                    w: free.w,
-                    h: frBottom - prBottom
-                });
+                created.push({ x: free.x, y: prBottom, w: free.w, h: frBottom - prBottom });
             }
-            // NOTE: The overlapping area is NOT added - it becomes occupied space
         }
 
-        // Replace free rects with the split results
-        this.freeRects = newFreeRects;
+        this.pruneAgainst(created, kept);
 
-        // Prune any remaining free rects that are contained within others
-        this.pruneFreeRects();
-
-        // Add the placed rect to used rects
+        this.freeRects = kept.length ? kept.concat(created) : created;
         this.usedRects.push(rect);
     }
 
-    pruneFreeRects() {
-        for (let i = this.freeRects.length - 1; i >= 0; i--) {
-            for (let j = this.freeRects.length - 1; j > i; j--) {
-                if (this.containsRect(this.freeRects[i], this.freeRects[j])) {
-                    this.freeRects.splice(j, 1);
-                } else if (this.containsRect(this.freeRects[j], this.freeRects[i])) {
-                    this.freeRects.splice(i, 1);
+    /**
+     * Drop contained rects: `created` against itself, then across `created`/`kept`.
+     * Both arrays are mutated in place.
+     */
+    pruneAgainst(created, kept) {
+        for (let i = created.length - 1; i >= 0; i--) {
+            let removed = false;
+
+            for (let j = created.length - 1; j > i; j--) {
+                if (this.containsRect(created[i], created[j])) {
+                    created.splice(j, 1);
+                } else if (this.containsRect(created[j], created[i])) {
+                    created.splice(i, 1);
+                    removed = true;
                     break;
+                }
+            }
+
+            if (removed) continue;
+
+            for (let j = kept.length - 1; j >= 0; j--) {
+                if (this.containsRect(kept[j], created[i])) {
+                    created.splice(i, 1);
+                    break;
+                }
+                if (this.containsRect(created[i], kept[j])) {
+                    kept.splice(j, 1);
                 }
             }
         }
@@ -213,11 +216,7 @@ class MaxRectsPacker {
     }
 
     occupancy() {
-        let usedArea = 0;
-        for (const rect of this.usedRects) {
-            usedArea += rect.w * rect.h;
-        }
-        return usedArea / (this.binWidth * this.binHeight);
+        return this.spriteArea / (this.binWidth * this.binHeight);
     }
 }
 
@@ -231,6 +230,7 @@ class GuillotinePacker {
         this.padding = padding;
         this.freeRects = [{ x: 0, y: 0, w: width, h: height }];
         this.usedRects = [];
+        this.spriteArea = 0;
         this.splitMethod = 'BestShortSideFit';
     }
 
@@ -258,96 +258,112 @@ class GuillotinePacker {
 
         this.freeRects.splice(bestIndex, 1);
 
-        // Split the free rect to create new free rects
         const splitW = bestRect.w - paddedW;
         const splitH = bestRect.h - paddedH;
 
+        // A guillotine split must produce DISJOINT free rects: exactly one of them
+        // may span the full side, the other is clipped to the placed rect's extent.
+        // Letting both span the full side overlaps them and stacks sprites.
         if (splitW > 0 && splitH > 0) {
-            // Split in both directions - creates two new free rects
-            if (this.splitMethod === 'BestShortSideFit') {
-                // Prefer splitting along the shorter remaining side
-                if (splitW < splitH) {
-                    // Split vertically first: right rect (splitW wide), bottom rect (full width)
-                    this.freeRects.push({ 
-                        x: bestRect.x + paddedW, 
-                        y: bestRect.y, 
-                        w: splitW, 
-                        h: bestRect.h 
-                    });
-                    this.freeRects.push({ 
-                        x: bestRect.x, 
-                        y: bestRect.y + paddedH, 
-                        w: bestRect.w,  // Full width for bottom rect
-                        h: splitH 
-                    });
-                } else {
-                    // Split horizontally first: bottom rect (splitH tall), right rect (full height)
-                    this.freeRects.push({ 
-                        x: bestRect.x, 
-                        y: bestRect.y + paddedH, 
-                        w: bestRect.w, 
-                        h: splitH 
-                    });
-                    this.freeRects.push({ 
-                        x: bestRect.x + paddedW, 
-                        y: bestRect.y, 
-                        w: splitW, 
-                        h: paddedH  // Use paddedH (sprite height) for right rect
-                    });
-                }
+            // Keep whichever leftover is larger as one full-span rect (Jylanki's
+            // "split shorter leftover axis"). Cutting the other way strands the big
+            // dimension in slivers and collapses occupancy to ~20%.
+            const splitVertical = (this.splitMethod === 'BestShortSideFit')
+                ? splitW >= splitH
+                : splitW * bestRect.h > splitH * bestRect.w;
+
+            if (splitVertical) {
+                // Cut down the right edge: right piece keeps the full height,
+                // bottom piece is clipped to the placed rect's width.
+                this.freeRects.push({
+                    x: bestRect.x + paddedW,
+                    y: bestRect.y,
+                    w: splitW,
+                    h: bestRect.h
+                });
+                this.freeRects.push({
+                    x: bestRect.x,
+                    y: bestRect.y + paddedH,
+                    w: paddedW,
+                    h: splitH
+                });
             } else {
-                // BestAreaFit: prefer split that leaves larger usable area
-                if (splitW * bestRect.h > splitH * bestRect.w) {
-                    // Split vertically: right rect
-                    this.freeRects.push({ 
-                        x: bestRect.x + paddedW, 
-                        y: bestRect.y, 
-                        w: splitW, 
-                        h: bestRect.h 
-                    });
-                    this.freeRects.push({ 
-                        x: bestRect.x, 
-                        y: bestRect.y + paddedH, 
-                        w: bestRect.w, 
-                        h: splitH 
-                    });
-                } else {
-                    // Split horizontally: bottom rect
-                    this.freeRects.push({ 
-                        x: bestRect.x, 
-                        y: bestRect.y + paddedH, 
-                        w: bestRect.w, 
-                        h: splitH 
-                    });
-                    this.freeRects.push({ 
-                        x: bestRect.x + paddedW, 
-                        y: bestRect.y, 
-                        w: splitW, 
-                        h: paddedH 
-                    });
-                }
+                // Cut across the bottom edge: bottom piece keeps the full width,
+                // right piece is clipped to the placed rect's height.
+                this.freeRects.push({
+                    x: bestRect.x,
+                    y: bestRect.y + paddedH,
+                    w: bestRect.w,
+                    h: splitH
+                });
+                this.freeRects.push({
+                    x: bestRect.x + paddedW,
+                    y: bestRect.y,
+                    w: splitW,
+                    h: paddedH
+                });
             }
         } else if (splitW > 0) {
-            // Only horizontal split possible (vertical space exhausted)
-            this.freeRects.push({ 
-                x: bestRect.x + paddedW, 
-                y: bestRect.y, 
-                w: splitW, 
-                h: bestRect.h 
+            this.freeRects.push({
+                x: bestRect.x + paddedW,
+                y: bestRect.y,
+                w: splitW,
+                h: bestRect.h
             });
         } else if (splitH > 0) {
-            // Only vertical split possible (horizontal space exhausted)
-            this.freeRects.push({ 
-                x: bestRect.x, 
-                y: bestRect.y + paddedH, 
-                w: bestRect.w, 
-                h: splitH 
+            this.freeRects.push({
+                x: bestRect.x,
+                y: bestRect.y + paddedH,
+                w: bestRect.w,
+                h: splitH
             });
         }
 
-        const placed = { x: bestRect.x + this.padding, y: bestRect.y + this.padding, w: width, h: height, padded: true };
+        this.mergeFreeRects();
+
+        const placed = { x: bestRect.x + this.padding, y: bestRect.y + this.padding, w: width, h: height };
         this.usedRects.push(placed);
+        this.spriteArea += width * height;
         return placed;
+    }
+
+    /**
+     * Recombine free rects that share a full edge. Without this the guillotine cuts
+     * shred the sheet into slivers that nothing fits into, which is why this packer
+     * was bottoming out around 20-28% occupancy.
+     */
+    mergeFreeRects() {
+        // Repeated passes let a rect absorb several neighbours, but the count is
+        // capped: restarting the scan on every merge turns this into O(f^3) and it
+        // becomes the dominant cost on large sheets for a marginal packing gain.
+        for (let pass = 0; pass < MERGE_PASSES; pass++) {
+            let merged = false;
+
+            for (let i = 0; i < this.freeRects.length; i++) {
+                const a = this.freeRects[i];
+
+                for (let j = this.freeRects.length - 1; j > i; j--) {
+                    const b = this.freeRects[j];
+                    let joined = false;
+
+                    if (a.w === b.w && a.x === b.x) {
+                        if (a.y === b.y + b.h) { a.y = b.y; a.h += b.h; joined = true; }
+                        else if (a.y + a.h === b.y) { a.h += b.h; joined = true; }
+                    }
+                    else if (a.h === b.h && a.y === b.y) {
+                        if (a.x === b.x + b.w) { a.x = b.x; a.w += b.w; joined = true; }
+                        else if (a.x + a.w === b.x) { a.w += b.w; joined = true; }
+                    }
+
+                    if (joined) {
+                        this.freeRects.splice(j, 1);
+                        merged = true;
+                    }
+                }
+            }
+
+            if (!merged) break;
+        }
     }
 
     score(rect, width, height) {
@@ -360,11 +376,7 @@ class GuillotinePacker {
     }
 
     occupancy() {
-        let usedArea = 0;
-        for (const rect of this.usedRects) {
-            usedArea += rect.w * rect.h;
-        }
-        return usedArea / (this.binWidth * this.binHeight);
+        return this.spriteArea / (this.binWidth * this.binHeight);
     }
 }
 
@@ -378,6 +390,7 @@ class ShelfPacker {
         this.padding = padding;
         this.shelves = [];
         this.usedRects = [];
+        this.spriteArea = 0;
         this.currentY = 0;
     }
 
@@ -385,7 +398,8 @@ class ShelfPacker {
         const paddedW = width + this.padding * 2;
         const paddedH = height + this.padding * 2;
 
-        // Find best shelf
+        if (paddedW > this.binWidth) return null;
+
         let bestShelfIndex = -1;
         let bestScore = Infinity;
 
@@ -402,7 +416,10 @@ class ShelfPacker {
 
         let shelf;
         if (bestShelfIndex === -1) {
-            // Create new shelf
+            // Opening a new shelf must respect the bin height, otherwise the packer
+            // never fails and the solver happily reports an over-limit atlas.
+            if (this.currentY + paddedH > this.binHeight) return null;
+
             shelf = {
                 height: paddedH,
                 usedWidth: 0,
@@ -423,15 +440,12 @@ class ShelfPacker {
 
         shelf.usedWidth += paddedW;
         this.usedRects.push(rect);
+        this.spriteArea += width * height;
         return rect;
     }
 
     occupancy() {
-        let usedArea = 0;
-        for (const rect of this.usedRects) {
-            usedArea += rect.w * rect.h;
-        }
-        return usedArea / (this.binWidth * this.binHeight);
+        return this.spriteArea / (this.binWidth * this.binHeight);
     }
 
     getHeight() {
@@ -451,6 +465,7 @@ class SkylinePacker {
         this.padding = padding;
         this.skyline = [{ x: 0, y: 0, w: width }];
         this.usedRects = [];
+        this.spriteArea = 0;
     }
 
     insert(width, height) {
@@ -461,18 +476,23 @@ class SkylinePacker {
         let bestX = 0;
         let bestY = Infinity;
 
+        // Bottom-left rule: lowest resting y wins, ties broken by leftmost x.
         for (let i = 0; i < this.skyline.length; i++) {
-            const result = this.findPosition(i, paddedW);
-            if (result.y < bestY || (result.y === bestY && result.x < bestX)) {
-                bestIndex = result.index;
-                bestX = result.x;
-                bestY = result.y;
+            const y = this.fits(i, paddedW, paddedH);
+            if (y === null) continue;
+
+            const x = this.skyline[i].x;
+            if (y < bestY || (y === bestY && x < bestX)) {
+                bestY = y;
+                bestX = x;
+                bestIndex = i;
             }
         }
 
-        if (bestY === Infinity || bestY + paddedH > this.binHeight) return null;
+        if (bestIndex === -1) return null;
 
-        // Place rectangle
+        this.addSkylineLevel(bestIndex, bestX, bestY, paddedW, paddedH);
+
         const rect = {
             x: bestX + this.padding,
             y: bestY + this.padding,
@@ -480,79 +500,79 @@ class SkylinePacker {
             h: height
         };
 
-        // Update skyline - top of placed rect = bestY + padding + height = bestY + paddedH
-        const newNode = { x: bestX, y: bestY + paddedH, w: paddedW };
-        this.skyline.splice(bestIndex, 0, newNode);
-
-        // Merge adjacent skyline levels that have the same height
-        // This consolidates the skyline and prevents fragmentation
-        for (let i = 0; i < this.skyline.length - 1; i++) {
-            const current = this.skyline[i];
-            const next = this.skyline[i + 1];
-            
-            // If adjacent nodes have the same y, they can be merged
-            if (current.y === next.y) {
-                current.w += next.w;
-                this.skyline.splice(i + 1, 1);
-                i--;
-            }
-        }
-
         this.usedRects.push(rect);
+        this.spriteArea += width * height;
         return rect;
     }
 
-    findPosition(startIndex, width) {
-        let bestX = this.skyline[startIndex].x;
-        let bestY = this.findBestY(startIndex, width);
-        let bestIndex = startIndex;
+    /**
+     * Resting y for a paddedW x paddedH box starting at skyline node `index`,
+     * or null when it runs past the right edge or the bin height.
+     */
+    fits(index, width, height) {
+        const x = this.skyline[index].x;
+        if (x + width > this.binWidth) return null;
 
-        for (let i = startIndex + 1; i < this.skyline.length; i++) {
-            const x = this.skyline[i].x;
-            const y = this.findBestY(i, width);
-            if (y < bestY || (y === bestY && x < bestX)) {
-                bestX = x;
-                bestY = y;
-                bestIndex = i;
-            }
-        }
-
-        return { x: bestX, y: bestY, index: bestIndex };
-    }
-
-    findBestY(index, width) {
         let y = 0;
+        let remaining = width;
         let i = index;
-        let x = this.skyline[index].x;
 
-        while (i < this.skyline.length && x + width > this.skyline[i].x) {
+        while (remaining > 0) {
+            if (i >= this.skyline.length) return null;
             y = Math.max(y, this.skyline[i].y);
-            x = this.skyline[i].x + this.skyline[i].w;
+            if (y + height > this.binHeight) return null;
+            remaining -= this.skyline[i].w;
             i++;
         }
 
         return y;
     }
 
-    occupancy() {
-        let usedArea = 0;
-        for (const rect of this.usedRects) {
-            usedArea += rect.w * rect.h;
+    /**
+     * Raise the skyline over [x, x+width). The new node must also CLIP the nodes it
+     * covers - inserting without trimming them (the previous behaviour) let later
+     * sprites resolve to stale low y values and land on top of existing ones.
+     */
+    addSkylineLevel(index, x, y, width, height) {
+        this.skyline.splice(index, 0, { x: x, y: y + height, w: width });
+
+        for (let i = index + 1; i < this.skyline.length; i++) {
+            const node = this.skyline[i];
+            const prev = this.skyline[i - 1];
+
+            if (node.x >= prev.x + prev.w) break;
+
+            const shrink = prev.x + prev.w - node.x;
+            node.x += shrink;
+            node.w -= shrink;
+
+            if (node.w > 0) break;
+
+            this.skyline.splice(i, 1);
+            i--;
         }
-        return usedArea / (this.binWidth * this.binHeight);
+
+        this.mergeSkyline();
+    }
+
+    mergeSkyline() {
+        for (let i = 0; i < this.skyline.length - 1; i++) {
+            if (this.skyline[i].y === this.skyline[i + 1].y) {
+                this.skyline[i].w += this.skyline[i + 1].w;
+                this.skyline.splice(i + 1, 1);
+                i--;
+            }
+        }
+    }
+
+    occupancy() {
+        return this.spriteArea / (this.binWidth * this.binHeight);
     }
 
     getHeight() {
-        if (this.skyline.length === 0) return 0;
-        // Find the maximum y position in the skyline
-        // This represents the highest occupied space in the bin
         let maxY = 0;
         for (const node of this.skyline) {
-            // Each node's y represents the top of placed rectangles at that x position
-            // The height of the bin used is the max y value
-            if (node.y > maxY) {
-                maxY = node.y;
-            }
+            if (node.y > maxY) maxY = node.y;
         }
         return maxY;
     }
@@ -589,6 +609,13 @@ class AdvancedSmartSizeSolver {
         'skyline': 'Skyline'
     };
 
+    // Extreme aspect ratios pack "efficiently" but make poor atlases, so a mild
+    // penalty steers ties toward square-ish sheets without overriding efficiency.
+    static ASPECT_PENALTY = 0.15;
+
+    // Stop searching once a packing is this good - further widths cannot help much.
+    static GOOD_ENOUGH = 0.95;
+
     /**
      * Calculate optimal atlas dimensions using multiple algorithms
      * @param {Array} rects - Array of sprite rectangles with frame.w and frame.h
@@ -597,230 +624,312 @@ class AdvancedSmartSizeSolver {
      */
     static calculateOptimalDimensions(rects, options = {}) {
         if (rects.length === 0) {
-            return { width: 512, height: 512, efficiency: 0, algorithm: 'best' };
+            return { width: 512, height: 512, efficiency: 0, algorithm: 'best', rects: [] };
         }
 
         const padding = options.padding || 0;
         const borderPadding = options.borderPadding || 0;
         const allowRotation = options.allowRotation || false;
+        const powerOfTwo = options.powerOfTwo || false;
         const maxSizeLimit = options.disableMaxLimit ? 8192 : MAX_SIZE_LIMIT;
         const requestedAlgorithm = options.algorithm || AdvancedSmartSizeSolver.ALGORITHM.BEST;
 
-        // Get sprite sizes with padding
-        const sprites = rects.map(rect => ({
+        // map() already yields the index; the previous rects.indexOf(rect) lookup
+        // made this O(n^2) before any packing even started.
+        const sprites = rects.map((rect, index) => ({
             w: rect.frame.w,
             h: rect.frame.h,
-            originalIndex: rects.indexOf(rect)
+            originalIndex: index
         }));
 
         // Sort by area (largest first) for better packing
         sprites.sort((a, b) => (b.w * b.h) - (a.w * a.h));
 
-        // Calculate bounds
-        let maxSpriteWidth = Math.max(...sprites.map(s => s.w));
-        let maxSpriteHeight = Math.max(...sprites.map(s => s.h));
-        let totalArea = sprites.reduce((sum, s) => sum + s.w * s.h, 0);
+        let maxSpriteWidth = 0;
+        let maxSpriteHeight = 0;
+        let totalArea = 0;
+        for (const s of sprites) {
+            if (s.w > maxSpriteWidth) maxSpriteWidth = s.w;
+            if (s.h > maxSpriteHeight) maxSpriteHeight = s.h;
+            totalArea += s.w * s.h;
+        }
 
-        // Estimate initial width
-        const initialWidth = Math.max(maxSpriteWidth, Math.ceil(Math.sqrt(totalArea)));
+        // A candidate width must fit the widest sprite plus its gap and the border,
+        // otherwise every algorithm fails and the solver falls back to a bogus size.
+        const overhead = padding * 2 + borderPadding * 2;
+        const minWidth = maxSpriteWidth + overhead;
+        const minHeight = maxSpriteHeight + overhead;
 
-        // Generate candidate widths to try
-        const widths = this.generateCandidateWidths(initialWidth, maxSpriteWidth, maxSpriteHeight, totalArea, maxSizeLimit);
+        const initialWidth = Math.max(minWidth, Math.ceil(Math.sqrt(totalArea)) + overhead);
 
-        let bestOverall = null;
-
-        // Determine which algorithms to run
         const algorithms = requestedAlgorithm === AdvancedSmartSizeSolver.ALGORITHM.BEST
             ? Object.values(AdvancedSmartSizeSolver.ALGORITHM).filter(a => a !== AdvancedSmartSizeSolver.ALGORITHM.BEST)
             : [requestedAlgorithm];
 
-        // Initial exploration: try each width with a large height (maxSizeLimit) to find best packing
-        for (const width of widths) {
+        const widths = this.generateCandidateWidths(
+            initialWidth, minWidth, maxSpriteHeight, totalArea, maxSizeLimit, powerOfTwo
+        );
+
+        const packOptions = { padding, borderPadding, allowRotation, maxSizeLimit, powerOfTwo };
+
+        let bestOverall = null;
+
+        if (algorithms.length === 1) {
+            bestOverall = this.searchWidths(sprites, widths, algorithms[0], packOptions);
+        }
+        else {
+            // Two-phase search. Brute-forcing every width against every algorithm is
+            // O(widths * algorithms * n^2) and took ~26s for 300 sprites; instead pick
+            // the algorithm on a small probe set, then refine the width with it alone.
+            const probeCount = sprites.length > 200 ? 3 : (sprites.length > 80 ? 4 : 6);
+            const probes = this.pickSpread(widths, probeCount);
+
+            let bestAlgorithm = algorithms[0];
+            let bestProbe = null;
+
             for (const algo of algorithms) {
-                // Use maxSizeLimit as height for exploration - algorithm will use only what it needs
-                const result = this.packWithAlgorithm(sprites, width, maxSizeLimit, algo, padding, borderPadding, maxSizeLimit);
-                
-                if (result.success && result.efficiency > 0) {
-                    if (!bestOverall || this.isBetterResult(result, bestOverall)) {
-                        bestOverall = {
-                            ...result,
-                            width: width,
-                            height: result.usedHeight,  // Track actual height used
-                            algorithm: algo
-                        };
-                    }
+                const result = this.searchWidths(sprites, probes, algo, packOptions);
+                if (result && (!bestProbe || this.isBetterResult(result, bestProbe))) {
+                    bestProbe = result;
+                    bestAlgorithm = algo;
                 }
             }
+
+            // Refining over every candidate width costs one full pack each, so on big
+            // sheets narrow the list rather than letting the search grow with n.
+            const refineWidths = sprites.length > 200
+                ? this.pickSpread(widths, 10)
+                : widths;
+
+            const refined = this.searchWidths(sprites, refineWidths, bestAlgorithm, packOptions);
+            bestOverall = (refined && (!bestProbe || this.isBetterResult(refined, bestProbe)))
+                ? refined
+                : bestProbe;
         }
 
-        // If no packing succeeded, return minimal size
         if (!bestOverall) {
+            // Nothing fit within the size limit. Report the smallest sheet that at
+            // least holds the largest sprite so the caller can surface a real error.
+            const w = Math.min(minWidth, maxSizeLimit);
+            const h = Math.min(minHeight, maxSizeLimit);
             return {
-                width: maxSpriteWidth + padding * 2 + borderPadding * 2,
-                height: maxSpriteHeight + padding * 2 + borderPadding * 2,
-                efficiency: totalArea / ((maxSpriteWidth + padding * 2 + borderPadding * 2) * (maxSpriteHeight + padding * 2 + borderPadding * 2)),
+                width: w,
+                height: h,
+                efficiency: Math.min(1, totalArea / (w * h)),
                 algorithm: requestedAlgorithm,
                 rects: []
             };
         }
 
-        // Apply border padding to final result
-        const finalWidth = bestOverall.width + borderPadding * 2;
-        const finalHeight = bestOverall.height + borderPadding * 2;
-
-        // NOTE: We use the exploration result directly (bestOverall) rather than repacking.
-        // The exploration packWithAlgorithm already computed correct rect positions
-        // using maxSizeLimit as height. Adding borderPadding to positions is done inside
-        // packWithAlgorithm when creating packed rects.
-
         return {
-            width: finalWidth,
-            height: finalHeight,
+            width: bestOverall.width,
+            height: bestOverall.height,
             efficiency: bestOverall.efficiency,
             algorithm: bestOverall.algorithm,
             rects: bestOverall.rects
         };
     }
 
-    static generateCandidateWidths(initialWidth, maxSpriteWidth, maxSpriteHeight, totalArea, maxSizeLimit) {
-        const widths = new Set();
-        
-        // Add some strategic widths
-        widths.add(maxSpriteWidth);
-        widths.add(initialWidth);
-        widths.add(Math.ceil(Math.sqrt(totalArea)));
-        widths.add(Math.ceil(totalArea / maxSpriteHeight));
-        
-        // Power of 2 candidates
-        for (let w = 64; w <= maxSizeLimit; w *= 2) {
-            if (w >= maxSpriteWidth) widths.add(w);
-        }
-        
-        // Power of 2 + offset
-        for (let w = 64; w <= maxSizeLimit; w *= 2) {
-            if (w >= maxSpriteWidth) {
-                widths.add(w - 32);
-                widths.add(w + 32);
+    /**
+     * Run one algorithm across a list of candidate widths and keep the best result.
+     */
+    static searchWidths(sprites, widths, algorithm, options) {
+        let best = null;
+
+        for (const width of widths) {
+            const result = this.packWithAlgorithm(sprites, width, options.maxSizeLimit, algorithm, options);
+
+            if (!result.success) continue;
+
+            result.algorithm = algorithm;
+
+            if (!best || this.isBetterResult(result, best)) {
+                best = result;
             }
+
+            // Compare against the aspect-aware score, not raw efficiency. Widths are
+            // tried ascending, and the narrowest sheet is often a perfectly "efficient"
+            // single-column strip - stopping there would skip the square-ish option.
+            if (this.score(best) >= AdvancedSmartSizeSolver.GOOD_ENOUGH) break;
         }
 
-        // Generate range around initial width
-        const step = 32;
-        for (let w = Math.max(maxSpriteWidth, initialWidth - 256); w <= Math.min(initialWidth + 256, maxSizeLimit); w += step) {
+        return best;
+    }
+
+    /**
+     * Evenly sample `count` entries from a sorted list, always keeping both ends.
+     */
+    static pickSpread(list, count) {
+        if (list.length <= count) return list;
+
+        const out = [];
+        for (let i = 0; i < count; i++) {
+            out.push(list[Math.round(i * (list.length - 1) / (count - 1))]);
+        }
+        return Array.from(new Set(out));
+    }
+
+    static generateCandidateWidths(initialWidth, minWidth, maxSpriteHeight, totalArea, maxSizeLimit, powerOfTwo) {
+        const widths = new Set();
+
+        if (powerOfTwo) {
+            // Only powers of two can survive the caller's rounding, so trying anything
+            // else just wastes time and biases the choice toward a width that will be
+            // rounded up anyway.
+            for (let w = 32; w <= maxSizeLimit; w *= 2) {
+                if (w >= minWidth) widths.add(w);
+            }
+            return Array.from(widths).sort((a, b) => a - b);
+        }
+
+        widths.add(minWidth);
+        widths.add(initialWidth);
+        widths.add(Math.ceil(Math.sqrt(totalArea)));
+        if (maxSpriteHeight > 0) widths.add(Math.ceil(totalArea / maxSpriteHeight));
+
+        for (let w = 64; w <= maxSizeLimit; w *= 2) {
+            widths.add(w);
+            widths.add(w - 32);
+            widths.add(w + 32);
+        }
+
+        // Sample around the square-ish estimate, where the optimum usually sits
+        const step = Math.max(32, Math.round(initialWidth / 16));
+        for (let w = initialWidth - step * 4; w <= initialWidth + step * 4; w += step) {
             widths.add(w);
         }
 
-        // Filter valid widths and sort
         return Array.from(widths)
-            .filter(w => w >= maxSpriteWidth && w <= maxSizeLimit)
+            .filter(w => w >= minWidth && w <= maxSizeLimit)
             .sort((a, b) => a - b);
     }
 
-    static packWithAlgorithm(sprites, width, height, algorithm, padding, borderPadding, maxSizeLimit) {
-        // Calculate inner dimensions (excluding border padding)
-        const paddedWidth = width - borderPadding * 2;
-        const paddedHeight = height - borderPadding * 2;
+    static packWithAlgorithm(sprites, width, height, algorithm, options) {
+        const padding = options.padding || 0;
+        const borderPadding = options.borderPadding || 0;
+        const allowRotation = options.allowRotation || false;
+        const maxSizeLimit = options.maxSizeLimit || MAX_SIZE_LIMIT;
+
+        // width/height are full atlas dimensions; the packer works inside the border.
+        const innerWidth = width - borderPadding * 2;
+        const innerHeight = height - borderPadding * 2;
+
+        if (innerWidth <= 0 || innerHeight <= 0) return { success: false };
 
         let packer;
         let method = 'BestShortSideFit';
 
         switch (algorithm) {
             case AdvancedSmartSizeSolver.ALGORITHM.MAXRECTS_BSSF:
-                packer = new MaxRectsPacker(paddedWidth, paddedHeight, padding);
+                packer = new MaxRectsPacker(innerWidth, innerHeight, padding);
                 method = 'BestShortSideFit';
                 break;
             case AdvancedSmartSizeSolver.ALGORITHM.MAXRECTS_BLSF:
-                packer = new MaxRectsPacker(paddedWidth, paddedHeight, padding);
+                packer = new MaxRectsPacker(innerWidth, innerHeight, padding);
                 method = 'BestLongSideFit';
                 break;
             case AdvancedSmartSizeSolver.ALGORITHM.MAXRECTS_BAF:
-                packer = new MaxRectsPacker(paddedWidth, paddedHeight, padding);
+                packer = new MaxRectsPacker(innerWidth, innerHeight, padding);
                 method = 'BestAreaFit';
                 break;
             case AdvancedSmartSizeSolver.ALGORITHM.MAXRECTS_BLR:
-                packer = new MaxRectsPacker(paddedWidth, paddedHeight, padding);
+                packer = new MaxRectsPacker(innerWidth, innerHeight, padding);
                 method = 'BottomLeftRule';
                 break;
             case AdvancedSmartSizeSolver.ALGORITHM.MAXRECTS_CP:
-                packer = new MaxRectsPacker(paddedWidth, paddedHeight, padding);
+                packer = new MaxRectsPacker(innerWidth, innerHeight, padding);
                 method = 'ContactPoint';
                 break;
             case AdvancedSmartSizeSolver.ALGORITHM.GUILLOTINE_BSSF:
-                packer = new GuillotinePacker(paddedWidth, paddedHeight, padding);
+                packer = new GuillotinePacker(innerWidth, innerHeight, padding);
                 packer.splitMethod = 'BestShortSideFit';
                 break;
             case AdvancedSmartSizeSolver.ALGORITHM.GUILLOTINE_BAF:
-                packer = new GuillotinePacker(paddedWidth, paddedHeight, padding);
+                packer = new GuillotinePacker(innerWidth, innerHeight, padding);
                 packer.splitMethod = 'BestAreaFit';
                 break;
             case AdvancedSmartSizeSolver.ALGORITHM.SHELF:
-                packer = new ShelfPacker(paddedWidth, paddedHeight, padding);
+                packer = new ShelfPacker(innerWidth, innerHeight, padding);
                 break;
             case AdvancedSmartSizeSolver.ALGORITHM.SKYLINE:
-                packer = new SkylinePacker(paddedWidth, paddedHeight, padding);
+                packer = new SkylinePacker(innerWidth, innerHeight, padding);
                 break;
             default:
-                packer = new MaxRectsPacker(paddedWidth, paddedHeight, padding);
+                packer = new MaxRectsPacker(innerWidth, innerHeight, padding);
                 method = 'BestShortSideFit';
         }
 
+        const isMaxRects = packer instanceof MaxRectsPacker;
         const packed = [];
-        let maxY = 0;
+        let contentBottom = 0;
 
         for (const sprite of sprites) {
-            const rect = (packer instanceof MaxRectsPacker) 
-                ? packer.insert(sprite.w, sprite.h, method)
+            const rect = isMaxRects
+                ? packer.insert(sprite.w, sprite.h, method, allowRotation)
                 : packer.insert(sprite.w, sprite.h);
-            if (!rect) {
-                return { success: false };
-            }
+
+            if (!rect) return { success: false };
+
             packed.push({
                 ...sprite,
                 x: rect.x + borderPadding,
-                y: rect.y + borderPadding
+                y: rect.y + borderPadding,
+                w: rect.w,
+                h: rect.h,
+                rotated: !!rect.rotated
             });
-            maxY = Math.max(maxY, rect.y + rect.h + borderPadding);
+
+            const bottom = rect.y + rect.h;
+            if (bottom > contentBottom) contentBottom = bottom;
         }
 
-        // Calculate actual height used
-        let usedHeight = maxY;
-        if (packer instanceof ShelfPacker) {
-            usedHeight = packer.getHeight() + borderPadding;
-        } else if (packer instanceof SkylinePacker) {
-            usedHeight = packer.getHeight() + borderPadding;
+        // Full atlas height: content plus one border on each side, plus the trailing
+        // sprite gap so the bottom row keeps the same spacing as its neighbours.
+        let usedHeight = contentBottom + padding + borderPadding * 2;
+
+        if (options.powerOfTwo) {
+            usedHeight = Math.pow(2, Math.ceil(Math.log2(Math.max(1, usedHeight))));
         }
 
-        // Calculate efficiency
-        let totalSpriteArea = 0;
-        for (const s of sprites) {
-            totalSpriteArea += s.w * s.h;
-        }
+        if (usedHeight > maxSizeLimit) return { success: false };
 
-        const totalArea = width * usedHeight;
-        const efficiency = totalSpriteArea / totalArea;
+        let spriteArea = 0;
+        for (const s of sprites) spriteArea += s.w * s.h;
+
+        const efficiency = Math.min(1, spriteArea / (width * usedHeight));
 
         return {
             success: true,
             width: width,
             height: usedHeight,
             efficiency: efficiency,
-            rects: packed,
-            usedHeight: usedHeight
+            rects: packed
         };
     }
 
+    /**
+     * Score a candidate: efficiency first, nudged toward square-ish sheets.
+     */
+    static score(result) {
+        const ratio = Math.max(result.width / result.height, result.height / result.width);
+        const penalty = AdvancedSmartSizeSolver.ASPECT_PENALTY * (1 - 1 / ratio);
+        return result.efficiency * (1 - penalty);
+    }
+
     static isBetterResult(a, b) {
-        // Prefer higher efficiency
-        if (Math.abs(a.efficiency - b.efficiency) > 0.01) {
-            return a.efficiency > b.efficiency;
+        const scoreA = this.score(a);
+        const scoreB = this.score(b);
+
+        if (Math.abs(scoreA - scoreB) > 0.005) {
+            return scoreA > scoreB;
         }
-        // If efficiency is similar, prefer smaller area
+
         const areaA = a.width * a.height;
         const areaB = b.width * b.height;
         if (areaA !== areaB) {
             return areaA < areaB;
         }
-        // Prefer square-ish dimensions
+
         const ratioA = Math.max(a.width / a.height, a.height / a.width);
         const ratioB = Math.max(b.width / b.height, b.height / b.width);
         return ratioA < ratioB;
@@ -836,11 +945,11 @@ class AdvancedSmartSizeSolver {
 
         const scaleW = maxSize / width;
         const scaleH = maxSize / height;
-        const scale = Math.min(scaleW, scaleH);
+        const scale = Math.max(0.25, Math.min(scaleW, scaleH));
 
         return {
             requiresScale: true,
-            scale: Math.max(0.25, scale),
+            scale: scale,
             scaledWidth: Math.round(width * scale),
             scaledHeight: Math.round(height * scale)
         };
