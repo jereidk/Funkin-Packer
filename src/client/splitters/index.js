@@ -29,6 +29,13 @@ function getSplitterByType(type) {
 
 function getSplitterByData(data, cb) {
     for(let item of list) {
+        // Stop probing once a splitter has matched - later checks (e.g.
+        // UIKit's plist parser) would otherwise still run against data they
+        // were never meant to handle, which can log noisy false-positive
+        // parse errors (xmldom logs straight to console before the
+        // exception is caught) for a format that's already been resolved.
+        if(cb === null) break;
+
         if(item.type !== Grid.type) {
             item.check(data, (checked) => {
                 if(checked) {
