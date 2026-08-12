@@ -15,6 +15,7 @@ import astcEncoderFallback from './utils/astc/ASTCEncoder';
 import Downloader from 'platform/Downloader';
 // PNG compression
 import { compressPngFromCanvas } from './utils/PngCompressor';
+import { bytesToBinaryString } from './utils/BinaryString';
 
 // Idempotent polyfill at module scope - HMR-safe with configurable: true
 if (!HTMLImageElement.prototype.hasOwnProperty('__fpToDataURL')) {
@@ -199,7 +200,7 @@ class APP {
                 const compressedData = await compressPngFromCanvas(pngCanvas, 'texture.png', compressOptions);
                 
                 // Convert Uint8Array to base64
-                imageData = btoa(String.fromCharCode(...compressedData));
+                imageData = btoa(bytesToBinaryString(compressedData));
                 console.log(`[APP] PNG compressed successfully, output size: ${imageData.length} bytes`);
             } else {
                 imageData = filter.apply(buffer).toDataURL(this.packOptions.textureFormat === "png" ? "image/png" : "image/jpeg");
@@ -220,7 +221,7 @@ class APP {
             if (this.packOptions.textureFormat === 'astc') {
                 // Convert ASTC binary to base64 for correct ZIP storage
                 const astcBytes = imageData instanceof Uint8Array ? imageData : new Uint8Array(imageData);
-                const astcBinary = String.fromCharCode(...astcBytes);
+                const astcBinary = bytesToBinaryString(astcBytes);
                 files.push({
                     name: `${fName}.astc`,
                     content: btoa(astcBinary),

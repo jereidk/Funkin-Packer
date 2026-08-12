@@ -77,6 +77,7 @@ PACKER_METHOD_TITLE;Método de empaquetamiento
 EXPORT;Exportar
 PLEASE_WAIT;Por favor, espere...
 INVALID_SIZE_ERROR;Tamaño incorrecto. Min: %sx%s
+TOO_MANY_SHEETS_ERROR;Demasiadas hojas (más de %s) - el tamaño de hoja configurado es muy chico para esta cantidad de sprites. Aumentá el tamaño o cambiá a modo Auto/Multi-Atlas.
 NO_IMAGES_ERROR;Por favor, primero añada imágenes
 CLEAR_WARNING;¿Quiéres borrar todas las imágenes?
 INVALID_ZIP_ERROR;Fichero zip incorrecto

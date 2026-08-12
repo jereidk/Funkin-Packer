@@ -77,6 +77,7 @@ PACKER_METHOD_TITLE;Packer method
 EXPORT;Export
 PLEASE_WAIT;Please, wait...
 INVALID_SIZE_ERROR;Invalid size. Min: %sx%s
+TOO_MANY_SHEETS_ERROR;Too many sheets (over %s) - the configured sheet size is too small for this many sprites. Increase the sheet size or switch to Auto/Multi-Atlas mode.
 NO_IMAGES_ERROR;Please, add images first
 CLEAR_WARNING;Really clear all images?
 INVALID_ZIP_ERROR;Invalid zip file

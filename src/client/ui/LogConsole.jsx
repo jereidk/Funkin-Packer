@@ -23,7 +23,12 @@ class LogConsole extends React.Component {
         this.clearLogs = this.clearLogs.bind(this);
         this.copyLogs = this.copyLogs.bind(this);
         this.handleLog = this.handleLog.bind(this);
-        
+        this.flushPendingLogs = this.flushPendingLogs.bind(this);
+
+        // Pending log entries not yet flushed into state - see handleLog().
+        this.pendingLogs = [];
+        this.flushScheduled = false;
+
         // Save originals before overriding
         this.originalLog = console.log;
         this.originalWarn = console.warn;
@@ -42,6 +47,7 @@ class LogConsole extends React.Component {
     }
 
     componentWillUnmount() {
+        this.unmounted = true;
         console.log = this.originalLog;
         console.warn = this.originalWarn;
         console.error = this.originalError;
@@ -84,11 +90,36 @@ class LogConsole extends React.Component {
             return String(arg);
         }).join(' ');
 
+        // Buffer instead of calling setState() here directly. This class
+        // overrides console.log/warn/error globally, so handleLog() runs
+        // from wherever those get called - often a plain synchronous loop
+        // with no React event on the call stack (e.g. PackProcessor's pack()
+        // ensemble sweep, which can call console.warn dozens of times in a
+        // tight loop). React only auto-batches setState calls made from
+        // inside its own event handlers; a setState from arbitrary code like
+        // this fires an immediate, separate render on every single call.
+        // Reported directly: a real repack that logged ~90+ warnings this
+        // way visibly stalled the tab. Coalescing every log that arrives
+        // within the same animation frame into one flush keeps this panel
+        // from turning routine console noise into a rendering bottleneck.
+        this.pendingLogs.push({ type, message, timestamp });
+
+        if (!this.flushScheduled) {
+            this.flushScheduled = true;
+            requestAnimationFrame(this.flushPendingLogs);
+        }
+    }
+
+    flushPendingLogs() {
+        this.flushScheduled = false;
+        const incoming = this.pendingLogs;
+        this.pendingLogs = [];
+        if (!incoming.length || this.unmounted) return;
+
         this.setState(prev => {
-            const logs = [...prev.logs, { type, message, timestamp }];
-            // Keep only last maxLogs
+            let logs = prev.logs.concat(incoming);
             if (logs.length > prev.maxLogs) {
-                logs.shift();
+                logs = logs.slice(logs.length - prev.maxLogs);
             }
             return { logs };
         });

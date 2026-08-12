@@ -1,4 +1,5 @@
 import MaxRectsBinPack from './packers/MaxRectsBin';
+import MaxRectsPackerNpm from './packers/MaxRectsPacker';
 import OptimalPacker from './packers/OptimalPacker';
 import allPackers from './packers';
 import Trimmer from './utils/Trimmer';
@@ -15,6 +16,13 @@ const SOLVER_MODE = {
     MULTI_ATLAS: 'multi-atlas',
     MANUAL: 'manual'
 };
+
+// A legitimate multi-sheet result is bounded by MAX_SIZE_LIMIT alone - a
+// sheet count anywhere near this high means the configured size (manual
+// mode has no automatic safety net, unlike the solver modes) is too small
+// for the sprite set, not that this many sheets is actually the right
+// answer. See the while loop below for what this guards against.
+const MAX_REASONABLE_SHEETS = 64;
 
 class PackProcessor {
 
@@ -72,6 +80,8 @@ class PackProcessor {
 
     static pack(images = {}, options = {}, onComplete = null, onError = null) {
         //debugger;
+        MaxRectsPackerNpm.resetMultiBinWarning();
+
         let rects = [];
 
         let spritePadding = options.spritePadding || 0;
@@ -263,6 +273,22 @@ class PackProcessor {
             sourceArea += rect.sourceSize.w * rect.sourceSize.h;
         }
 
+        // Budget for the WHOLE ensemble sweep below, not per combo or per sheet.
+        // Root cause of a real multi-minute hang: MaxRectsPacker's combos only
+        // ever read maxrects-packer's first internal bin (see MaxRectsPacker.js's
+        // own comment on why), so when the sprite set doesn't comfortably fit the
+        // configured sheet size, each of those combos alone can need a dozen-plus
+        // sheets to place everything - individually fast (each pack() call was
+        // sub-millisecond when this was measured against a real 45-sprite atlas),
+        // but "Optimal" mode reruns up to 18 such combos, and a per-combo sheet
+        // count never got anywhere near a single-combo cap since the cost is
+        // multiplicative across combos, not concentrated in any one of them. A
+        // per-combo cap alone (tried first) never triggered while the tab still
+        // hung for minutes. Tracking cumulative wall-clock time across every
+        // combo/sheet in this sweep is what actually bounds the real symptom.
+        const ENSEMBLE_TIME_BUDGET_MS = 8000;
+        const ensembleStartTime = performance.now();
+
         for (let combo of packerCombos) {
             let res = [];
             let sheetArea = 0;
@@ -288,6 +314,13 @@ class PackProcessor {
             }) : identical;
 
             while (_rects.length) {
+                if (performance.now() - ensembleStartTime > ENSEMBLE_TIME_BUDGET_MS) {
+                    if (onError) onError({
+                        description: I18.f("TOO_MANY_SHEETS_ERROR", MAX_REASONABLE_SHEETS)
+                    });
+                    return;
+                }
+
                 let packer = new combo.packerClass(width, height, combo.allowRotation, spritePadding);
                 let result = packer.pack(_rects, combo.packerMethod);
 
@@ -296,6 +329,27 @@ class PackProcessor {
                 if (!result || !result.length) {
                     if (onError) onError({
                         description: I18.f("INVALID_SIZE_ERROR", minWidth, minHeight)
+                    });
+                    return;
+                }
+
+                // Every sprite individually fits (checked above), so the loop above
+                // can't spin literally forever - but it can still spin for minutes:
+                // MaxRectsPacker (one of the combos "Optimal" mode tries) only ever
+                // returns its FIRST internal bin here (see MaxRectsPacker.js's own
+                // comment on why), so when the configured sheet size is too small for
+                // the sprite set as a whole, each combo can end up needing dozens of
+                // sheets to place everything - and "Optimal" reruns the ENTIRE combo
+                // ensemble (up to 18 packer/method/rotation combinations) for every
+                // sheet. Observed in practice: a real 45-sprite atlas repacked at a
+                // too-small manual size produced dozens of near-empty sheets over
+                // several minutes, each retriggering the full ensemble. A sheet count
+                // this high is never a legitimate result (MAX_SIZE_LIMIT alone bounds
+                // how large a single sheet needs to be), so bail with an actionable
+                // error instead of continuing to grind.
+                if (res.length >= MAX_REASONABLE_SHEETS) {
+                    if (onError) onError({
+                        description: I18.f("TOO_MANY_SHEETS_ERROR", MAX_REASONABLE_SHEETS)
                     });
                     return;
                 }

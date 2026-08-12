@@ -12,6 +12,19 @@ const METHOD = {
     // SmartSquareArea: "SmartSquareArea"
 };
 
+// A new MaxRectsPacker instance is created per sheet (see PackProcessor's
+// while loop), so an instance-level flag can't dedupe this warning across
+// sheets. When the configured size doesn't comfortably fit the sprite set,
+// EVERY sheet for EVERY MaxRectsPacker combo "Optimal" mode tries hits this
+// same condition - reported directly: a real repack logged it 90+ times in
+// one export. The underlying multi-bin-truncation behavior this warns about
+// is still worth surfacing once, just not once per sheet.
+let hasWarnedThisRun = false;
+
+function resetMultiBinWarning() {
+    hasWarnedThisRun = false;
+}
+
 class MaxRectsPacker extends Packer {
     constructor(width, height, allowRotate = false, padding = 0) {
         super();
@@ -62,9 +75,11 @@ class MaxRectsPacker extends Packer {
         // enough that the ensemble still tries it (see PackProcessor's
         // LARGE_ENSEMBLE_THRESHOLD) but whose combined size still doesn't fit
         // one sheet at the size being tried - narrow, but real.
-        if (packer.bins.length > 1) {
+        if (packer.bins.length > 1 && !hasWarnedThisRun) {
+            hasWarnedThisRun = true;
             console.warn(`[MaxRectsPacker] maxrects-packer split into ${packer.bins.length} bins; ` +
-                `only the first is used here, the rest are retried on the next sheet`);
+                `only the first is used here, the rest are retried on the next sheet ` +
+                `(this can repeat per sheet - logged once per export attempt)`);
         }
 
         let bin = packer.bins[0];
@@ -111,5 +126,7 @@ class MaxRectsPacker extends Packer {
         }
     }
 }
+
+MaxRectsPacker.resetMultiBinWarning = resetMultiBinWarning;
 
 export default MaxRectsPacker;
