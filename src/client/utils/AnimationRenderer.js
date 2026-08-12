@@ -111,7 +111,11 @@ function walkTimeline(timelineNode, tick, parentMatrix, symbolsByName, out, dept
         for (const element of frame.E || []) {
             if (element.ASI && element.ASI.N) {
                 const matrix = multiplyMatrix(parentMatrix, element.ASI.MX || IDENTITY_MATRIX);
-                out.push({ spriteName: element.ASI.N, matrix });
+                // parentMatrix/element/frame/layer/timelineNode are exposed so
+                // an editor can hit-test this entry, then mutate element.ASI
+                // in place (MX for move/rotate/scale, N to reassign which
+                // atlas sprite it draws) or locate/edit the owning frame.
+                out.push({ spriteName: element.ASI.N, matrix, kind: 'ASI', element, parentMatrix, frame, layer, timelineNode });
             } else if (element.SI && element.SI.SN) {
                 const child = symbolsByName.get(element.SI.SN);
                 if (!child) continue; // orphaned reference - AnimationLinker already surfaces this separately
