@@ -179,6 +179,25 @@ class BasisEncoder {
             sRGB = true,
         } = options;
 
+        // This prebuilt basis_encoder.wasm binary has a hard internal limit on
+        // total pixel count, independent of aspect ratio - bisected directly
+        // against the actual .wasm: 2048x2048 (4,194,304 px) succeeds, anything
+        // above it fails, and a 4096x1024 image (the same total pixel count as
+        // 2048x2048) also succeeds while a narrower 2200x1000 image (fewer total
+        // pixels but width > 2048) also succeeds - so it's specifically total
+        // pixels, not either dimension alone. There's no source available to
+        // rebuild this .wasm with a higher limit, so the only thing to do is
+        // fail fast and clearly instead of spending a real encode attempt (and
+        // logging an opaque "encode() returned 0") only to fall back anyway -
+        // reported directly: a 3779x3323 (12.6MP) export hit exactly this.
+        const MAX_TOTAL_PIXELS = 2048 * 2048;
+        if (width * height > MAX_TOTAL_PIXELS) {
+            throw new Error(
+                `BasisEncoder: ${width}x${height} (${(width * height / 1e6).toFixed(1)}MP) exceeds this WASM ` +
+                `build's ~4.2MP total pixel limit (independent of aspect ratio) - falling back to the JS encoder`
+            );
+        }
+
         console.log(`[BasisEncoder] Encoding ${width}x${height} to ASTC ${blockSize}, quality=${quality}`);
 
         try {
